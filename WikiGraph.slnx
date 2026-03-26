@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="WikiGraph.Api/WikiGraph.Api.csproj" />
+  <Project Path="WikiGraph.Web/WikiGraph.Web.csproj" />
+</Solution>
