@@ -1,0 +1,164 @@
+@page "/"
+@using WikiGraph.Contracts
+@inject HttpClient Http
+
+<PageTitle>WikiGraph</PageTitle>
+
+<section class="hero">
+    @* The browser UI presents the study-guide workspace with sessions, thread, citations, and graphs. *@
+    <div>
+        <p class="eyebrow">Wikipedia RAG workspace</p>
+        <h1>Session history, citations, and topic graphs in the browser.</h1>
+    </div>
+    <button class="send" @onclick="RunDemo">Generate demo query</button>
+</section>
+
+<div class="grid">
+    <section class="card" id="sessions">
+        @* Prior chats are listed as reloadable sessions. *@
+        <h2>Sessions</h2>
+        @if (sessions.Count == 0)
+        {
+            <p class="muted">No sessions loaded yet.</p>
+        }
+        else
+        {
+            @foreach (var session in sessions)
+            {
+                <button class="item session-button @(session.SessionId == selectedSessionId ? "selected" : "")" @onclick="() => LoadSession(session.SessionId)">
+                    <strong>@session.Title</strong>
+                    <span>@session.LastAccessUtc.ToLocalTime().ToString("g")</span>
+                </button>
+            }
+        }
+    </section>
+
+    <section class="card" id="thread">
+        @* The main panel shows the conversation history and query composer. *@
+        <h2>Conversation</h2>
+        @if (messages.Count == 0)
+        {
+            <p class="muted">Send a query to populate the thread.</p>
+        }
+        else
+        {
+            @foreach (var message in messages)
+            {
+                <article class="message @message.Role">
+                    <div class="role">@message.Role</div>
+                    <p>@message.Content</p>
+                </article>
+            }
+        }
+
+        <form class="composer" @onsubmit="SubmitPrompt" @onsubmit:preventDefault="true">
+            <input class="composer-input" @bind="prompt" aria-label="Prompt" />
+            <button class="send" type="submit">Send</button>
+        </form>
+    </section>
+
+    <section class="card">
+        @* Assistant output includes citations and one or more topic graphs. *@
+        <h2>Citations and graph</h2>
+        <div class="citations">
+            @foreach (var citation in citations)
+            {
+                <a class="citation" href="@citation.Url" target="_blank">
+                    <strong>@citation.Title</strong>
+                    <span>@citation.Section</span>
+                </a>
+            }
+        </div>
+        @foreach (var graph in graphs)
+        {
+            <div class="graph" id="graphs">
+                <h3>@graph.Topic</h3>
+                <div class="nodes">
+                    @foreach (var node in graph.Nodes)
+                    {
+                        <span class="node">@node.Label</span>
+                    }
+                </div>
+            </div>
+        }
+    </section>
+</div>
+
+@code {
+    private readonly List<SessionSummary> sessions = [];
+    private readonly List<MessageDto> messages = [];
+    private readonly List<CitationDto> citations = [];
+    private readonly List<GraphDto> graphs = [];
+    private string? selectedSessionId;
+    private string prompt = "Climate adaptation";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSessions();
+    }
+
+    private async Task LoadSessions()
+    {
+        var result = await Http.GetFromJsonAsync<List<SessionSummary>>("http://localhost:5000/api/sessions");
+        sessions.Clear();
+        if (result is not null)
+        {
+            sessions.AddRange(result);
+        }
+
+        if (sessions.Count > 0 && string.IsNullOrWhiteSpace(selectedSessionId))
+        {
+            await LoadSession(sessions[0].SessionId);
+        }
+    }
+
+    private async Task LoadSession(string sessionId)
+    {
+        var session = await Http.GetFromJsonAsync<SessionDetailDto>($"http://localhost:5000/api/sessions/{sessionId}");
+        if (session is null)
+        {
+            return;
+        }
+
+        selectedSessionId = sessionId;
+        messages.Clear();
+        citations.Clear();
+        graphs.Clear();
+        messages.AddRange(session.Messages);
+        citations.AddRange(session.Citations);
+        graphs.AddRange(session.Graphs);
+    }
+
+    private async Task SubmitPrompt()
+    {
+        if (string.IsNullOrWhiteSpace(prompt))
+        {
+            return;
+        }
+
+        var sessionId = selectedSessionId ?? "client-demo";
+        var response = await Http.PostAsJsonAsync("http://localhost:5000/api/query", new QueryRequest(sessionId, prompt, null));
+        var payload = await response.Content.ReadFromJsonAsync<QueryResponse>();
+
+        if (payload is null)
+        {
+            return;
+        }
+
+        selectedSessionId = sessionId;
+        messages.Clear();
+        citations.Clear();
+        graphs.Clear();
+        messages.Add(new MessageDto("user", prompt, DateTime.UtcNow));
+        messages.Add(new MessageDto("assistant", payload.AssistantText, DateTime.UtcNow));
+        citations.AddRange(payload.Citations);
+        graphs.AddRange(payload.Graphs);
+        await LoadSessions();
+    }
+
+    private async Task RunDemo()
+    {
+        prompt = "Climate adaptation";
+        await SubmitPrompt();
+    }
+}

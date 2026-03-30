@@ -1,5 +1,7 @@
 # Implementation Outline — Wikipedia RAG Chat, Study Guide, and Topic Graphs
 
+For build, run, API, UI hosting, and test instructions, see [USAGE.md](./USAGE.md).
+
 ## 1) Goal and scope
 
 This project reduces time spent researching by accepting a Wikipedia topic or article link and using an LLM to summarize and organize Wikipedia-based information into outputs that support early-stage project and paper development. The system prioritizes fast scope expansion and reference gathering rather than replacing deeper investigation. :contentReference[oaicite:0]{index=0}
