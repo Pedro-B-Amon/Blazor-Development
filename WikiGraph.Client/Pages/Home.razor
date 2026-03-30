@@ -1,6 +1,5 @@
 @page "/"
-@using WikiGraph.Contracts
-@inject HttpClient Http
+@inject ApiClient ApiClient
 
 <PageTitle>WikiGraph</PageTitle>
 
@@ -14,73 +13,17 @@
 </section>
 
 <div class="grid">
-    <section class="card" id="sessions">
-        @* Prior chats are listed as reloadable sessions. *@
-        <h2>Sessions</h2>
-        @if (sessions.Count == 0)
-        {
-            <p class="muted">No sessions loaded yet.</p>
-        }
-        else
-        {
-            @foreach (var session in sessions)
-            {
-                <button class="item session-button @(session.SessionId == selectedSessionId ? "selected" : "")" @onclick="() => LoadSession(session.SessionId)">
-                    <strong>@session.Title</strong>
-                    <span>@session.LastAccessUtc.ToLocalTime().ToString("g")</span>
-                </button>
-            }
-        }
-    </section>
+    <ChatSidebar Sessions="sessions" SelectedSessionId="selectedSessionId" OnSelectSession="LoadSession" />
 
-    <section class="card" id="thread">
-        @* The main panel shows the conversation history and query composer. *@
-        <h2>Conversation</h2>
-        @if (messages.Count == 0)
-        {
-            <p class="muted">Send a query to populate the thread.</p>
-        }
-        else
-        {
-            @foreach (var message in messages)
-            {
-                <article class="message @message.Role">
-                    <div class="role">@message.Role</div>
-                    <p>@message.Content</p>
-                </article>
-            }
-        }
+    <ChatThread Messages="messages" Prompt="prompt" PromptChanged="OnPromptChanged" OnSubmit="SubmitPrompt" />
 
-        <form class="composer" @onsubmit="SubmitPrompt" @onsubmit:preventDefault="true">
-            <input class="composer-input" @bind="prompt" aria-label="Prompt" />
-            <button class="send" type="submit">Send</button>
-        </form>
-    </section>
-
-    <section class="card">
+    <section class="card detail-card">
         @* Assistant output includes citations and one or more topic graphs. *@
         <h2>Citations and graph</h2>
-        <div class="citations">
-            @foreach (var citation in citations)
-            {
-                <a class="citation" href="@citation.Url" target="_blank">
-                    <strong>@citation.Title</strong>
-                    <span>@citation.Section</span>
-                </a>
-            }
+        <div class="detail-stack">
+            <CitationList Citations="citations" />
+            <GraphView Graphs="graphs" />
         </div>
-        @foreach (var graph in graphs)
-        {
-            <div class="graph" id="graphs">
-                <h3>@graph.Topic</h3>
-                <div class="nodes">
-                    @foreach (var node in graph.Nodes)
-                    {
-                        <span class="node">@node.Label</span>
-                    }
-                </div>
-            </div>
-        }
     </section>
 </div>
 
@@ -99,14 +42,18 @@
 
     private async Task LoadSessions()
     {
-        var result = await Http.GetFromJsonAsync<List<SessionSummary>>("http://localhost:5000/api/sessions");
+        var result = await ApiClient.GetSessionsAsync();
         sessions.Clear();
-        if (result is not null)
+        sessions.AddRange(result);
+
+        if (sessions.Count == 0)
         {
-            sessions.AddRange(result);
+            selectedSessionId = null;
+            ClearSessionArtifacts();
+            return;
         }
 
-        if (sessions.Count > 0 && string.IsNullOrWhiteSpace(selectedSessionId))
+        if (string.IsNullOrWhiteSpace(selectedSessionId) || sessions.All(session => session.SessionId != selectedSessionId))
         {
             await LoadSession(sessions[0].SessionId);
         }
@@ -114,19 +61,14 @@
 
     private async Task LoadSession(string sessionId)
     {
-        var session = await Http.GetFromJsonAsync<SessionDetailDto>($"http://localhost:5000/api/sessions/{sessionId}");
+        var session = await ApiClient.GetSessionAsync(sessionId);
         if (session is null)
         {
             return;
         }
 
         selectedSessionId = sessionId;
-        messages.Clear();
-        citations.Clear();
-        graphs.Clear();
-        messages.AddRange(session.Messages);
-        citations.AddRange(session.Citations);
-        graphs.AddRange(session.Graphs);
+        ReplaceSessionArtifacts(session);
     }
 
     private async Task SubmitPrompt()
@@ -136,29 +78,60 @@
             return;
         }
 
-        var sessionId = selectedSessionId ?? "client-demo";
-        var response = await Http.PostAsJsonAsync("http://localhost:5000/api/query", new QueryRequest(sessionId, prompt, null));
-        var payload = await response.Content.ReadFromJsonAsync<QueryResponse>();
+        var sessionId = await EnsureSelectedSessionAsync();
+        var payload = await ApiClient.SubmitQueryAsync(new QueryRequest(sessionId, prompt, null));
 
         if (payload is null)
         {
             return;
         }
 
-        selectedSessionId = sessionId;
-        messages.Clear();
-        citations.Clear();
-        graphs.Clear();
-        messages.Add(new MessageDto("user", prompt, DateTime.UtcNow));
-        messages.Add(new MessageDto("assistant", payload.AssistantText, DateTime.UtcNow));
-        citations.AddRange(payload.Citations);
-        graphs.AddRange(payload.Graphs);
         await LoadSessions();
+        await LoadSession(sessionId);
     }
 
     private async Task RunDemo()
     {
         prompt = "Climate adaptation";
         await SubmitPrompt();
+    }
+
+    private Task OnPromptChanged(string value)
+    {
+        prompt = value;
+        return Task.CompletedTask;
+    }
+
+    private async Task<string> EnsureSelectedSessionAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(selectedSessionId))
+        {
+            return selectedSessionId;
+        }
+
+        var session = await ApiClient.CreateSessionAsync(new CreateSessionRequest(InferTitle(prompt)));
+        selectedSessionId = session.SessionId;
+        return session.SessionId;
+    }
+
+    private void ReplaceSessionArtifacts(SessionDetailDto session)
+    {
+        ClearSessionArtifacts();
+        messages.AddRange(session.Messages);
+        citations.AddRange(session.Citations);
+        graphs.AddRange(session.Graphs);
+    }
+
+    private void ClearSessionArtifacts()
+    {
+        messages.Clear();
+        citations.Clear();
+        graphs.Clear();
+    }
+
+    private static string InferTitle(string value)
+    {
+        var title = value.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Take(5);
+        return string.Join(' ', title).Trim() is { Length: > 0 } result ? result : "New session";
     }
 }

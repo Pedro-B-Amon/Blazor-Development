@@ -12,11 +12,12 @@ This repository implements a Wikipedia research workspace with:
 
 ## What was implemented
 
-- Session management endpoints
-- Query submission endpoint
-- SQLite persistence for all session artifacts
-- Browser UI for sessions, conversation history, citations, and topic graphs
+- Controller-based API endpoints for sessions, health, and query submission
+- Layered application structure with orchestrator, summarizer, ingestion, retrieval, graph, repository, and vector-store services
+- SQLite persistence for sessions, messages, citations, graphs, pages, chunks, and embeddings
+- Browser UI components for sessions, conversation history, citations, and graphs via a typed `ApiClient`
 - Shared contracts for API/UI communication
+- Automatic PlantUML extraction into `docs/uml` from the implementation Markdown
 - Test coverage for persistence and API responses
 
 ## How to run
@@ -62,7 +63,15 @@ You can override the connection string in:
 
 ## Validation status
 
-- `dotnet build` succeeds for the API, WASM client, web shell, contracts, and tests.
+- `dotnet build WikiGraph.Api/WikiGraph.Api.csproj --no-restore` succeeds and generates UML artifacts in `docs/uml`.
+- `dotnet build WikiGraph.Web/WikiGraph.Web.csproj` succeeds.
+- `dotnet build WikiGraph.Client/WikiGraph.Client.csproj --no-restore` is currently blocked in this container by:
+
+```text
+Could not run the "ComputeWasmBuildAssets" task because MSBuild could not create or connect to a task host with runtime "NET" and architecture "x64".
+```
+
+- `dotnet build WikiGraph.Tests/WikiGraph.Tests.csproj` currently aborts early in this container with an opaque MSBuild failure.
 - `dotnet test` is still blocked in this container by an ARM64 VSTest host lookup error:
 
 ```text

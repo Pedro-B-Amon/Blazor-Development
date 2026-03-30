@@ -135,12 +135,47 @@ a {
     gap: .7rem;
 }
 
+.detail-card, .detail-stack {
+    display: grid;
+    gap: 1rem;
+}
+
 .node {
     display: inline-flex;
     width: fit-content;
     padding: .45rem .75rem;
     border-radius: 999px;
     background: rgba(255,255,255,.08);
+}
+
+.edges {
+    display: grid;
+    gap: .5rem;
+    margin-top: .85rem;
+}
+
+.edge {
+    color: rgba(248,241,230,.82);
+    font-size: .95rem;
+}
+
+.edge span {
+    color: #8fd3ff;
+}
+
+.composer {
+    display: grid;
+    gap: .75rem;
+    margin-top: 1rem;
+}
+
+.composer-input {
+    width: 100%;
+    padding: .9rem 1rem;
+    border: 1px solid rgba(255,255,255,.12);
+    border-radius: 1rem;
+    background: rgba(7,13,25,.45);
+    color: inherit;
 }
 
 @media (max-width: 1100px) {

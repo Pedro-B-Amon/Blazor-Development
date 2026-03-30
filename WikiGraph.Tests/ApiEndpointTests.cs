@@ -1,55 +1,58 @@
-using System.Net.Http.Json;
-using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.Sqlite;
-using Microsoft.Extensions.DependencyInjection;
-using WikiGraph.Api;
+using WikiGraph.Api.Application.Services;
+using WikiGraph.Api.Controllers;
+using WikiGraph.Api.Infrastructure.Persistence;
+using WikiGraph.Api.Infrastructure.Wikipedia;
 using WikiGraph.Contracts;
 using Xunit;
 
 namespace WikiGraph.Tests;
 
-public class ApiEndpointTests : IClassFixture<ApiEndpointTests.SqliteApiFactory>
+public class ApiEndpointTests
 {
-    private readonly SqliteApiFactory _factory;
-
-    public ApiEndpointTests(SqliteApiFactory factory) => _factory = factory;
-
     [Fact]
-    public async Task QueryEndpoint_ReturnsExpectedPayload()
+    public void QueryEndpoint_ReturnsExpectedPayload()
     {
-        var client = _factory.CreateClient();
+        var controller = BuildController();
+        var response = controller.Query(new QueryRequest("session-x", "Roman architecture", null));
 
-        var response = await client.PostAsJsonAsync("/api/query", new QueryRequest("session-x", "Roman architecture", null));
-
-        response.EnsureSuccessStatusCode();
-        var payload = await response.Content.ReadFromJsonAsync<QueryResponse>();
-
+        var ok = Assert.IsType<OkObjectResult>(response.Result);
+        var payload = Assert.IsType<QueryResponse>(ok.Value);
         Assert.NotNull(payload);
-        Assert.Equal("session-x", payload!.SessionId);
+        Assert.Equal("session-x", payload.SessionId);
         Assert.Single(payload.Graphs);
     }
 
-    public sealed class SqliteApiFactory : WebApplicationFactory<ApiAssemblyMarker>
+    private static QueryController BuildController()
     {
-        private readonly string _path = Path.Combine(Path.GetTempPath(), $"wikigraph-api-{Guid.NewGuid():N}.db");
+        var path = Path.Combine(Path.GetTempPath(), $"wikigraph-api-{Guid.NewGuid():N}.db");
+        var connectionFactory = new TestConnectionFactory(path);
+        var memoryDb = new SessionMemoryDb(connectionFactory);
+        var repository = new SqliteSessionRepository(connectionFactory, memoryDb);
+        var vectorStore = new SqliteVectorStore(connectionFactory, memoryDb);
+        var orchestrator = new QueryOrchestrator(
+            new WikipediaApiClient(),
+            new WikipediaIngestionService(),
+            new RagRetrievalService(vectorStore),
+            new AISummarizer(),
+            new GraphBuilderService(),
+            repository,
+            vectorStore);
 
-        protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
-        {
-            builder.ConfigureServices(services =>
-            {
-                services.AddSingleton<ISqliteConnectionFactory>(_ => new TestConnectionFactory(_path));
-                services.AddSingleton<ISessionStore, SqliteSessionStore>();
-            });
-        }
+        return new QueryController(orchestrator);
+    }
 
-        private sealed class TestConnectionFactory(string path) : ISqliteConnectionFactory
+    private sealed class TestConnectionFactory(string path) : ISqliteConnectionFactory
+    {
+        public SqliteConnection OpenConnection()
         {
-            public SqliteConnection OpenConnection()
-            {
-                var connection = new SqliteConnection($"Data Source={path}");
-                connection.Open();
-                return connection;
-            }
+            var connection = new SqliteConnection($"Data Source={path}");
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "PRAGMA foreign_keys = ON;";
+            command.ExecuteNonQuery();
+            return connection;
         }
     }
 }

@@ -1,0 +1,21 @@
+<div class="citations">
+    @if (Citations.Count == 0)
+    {
+        <p class="muted">Citations will appear after the first response.</p>
+    }
+    else
+    {
+        @foreach (var citation in Citations)
+        {
+            <a class="citation" href="@citation.Url" target="_blank" rel="noreferrer">
+                <strong>@citation.Title</strong>
+                <span>@citation.Section</span>
+            </a>
+        }
+    }
+</div>
+
+@code {
+    [Parameter]
+    public IReadOnlyList<CitationDto> Citations { get; set; } = [];
+}

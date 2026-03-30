@@ -1,0 +1,29 @@
+<section class="card" id="sessions">
+    @* Prior chats are listed as reloadable sessions. *@
+    <h2>Sessions</h2>
+    @if (Sessions.Count == 0)
+    {
+        <p class="muted">No sessions loaded yet.</p>
+    }
+    else
+    {
+        @foreach (var session in Sessions)
+        {
+            <button class="item session-button @(session.SessionId == SelectedSessionId ? "selected" : "")" @onclick="@(() => OnSelectSession.InvokeAsync(session.SessionId))">
+                <strong>@session.Title</strong>
+                <span>@session.LastAccessUtc.ToLocalTime().ToString("g")</span>
+            </button>
+        }
+    }
+</section>
+
+@code {
+    [Parameter]
+    public IReadOnlyList<SessionSummary> Sessions { get; set; } = [];
+
+    [Parameter]
+    public string? SelectedSessionId { get; set; }
+
+    [Parameter]
+    public EventCallback<string> OnSelectSession { get; set; }
+}

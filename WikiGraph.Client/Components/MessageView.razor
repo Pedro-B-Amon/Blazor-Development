@@ -1,0 +1,9 @@
+<article class="message @Message.Role">
+    <div class="role">@Message.Role</div>
+    <p>@Message.Content</p>
+</article>
+
+@code {
+    [Parameter, EditorRequired]
+    public required MessageDto Message { get; set; }
+}

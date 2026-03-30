@@ -1,0 +1,39 @@
+<section class="card" id="thread">
+    @* The main panel shows the conversation history and query composer. *@
+    <h2>Conversation</h2>
+    @if (Messages.Count == 0)
+    {
+        <p class="muted">Send a query to populate the thread.</p>
+    }
+    else
+    {
+        @foreach (var message in Messages)
+        {
+            <MessageView Message="message" />
+        }
+    }
+
+    <form class="composer" @onsubmit="HandleSubmit" @onsubmit:preventDefault="true">
+        <input class="composer-input" value="@Prompt" @oninput="HandlePromptChanged" aria-label="Prompt" />
+        <button class="send" type="submit">Send</button>
+    </form>
+</section>
+
+@code {
+    [Parameter]
+    public IReadOnlyList<MessageDto> Messages { get; set; } = [];
+
+    [Parameter]
+    public string Prompt { get; set; } = string.Empty;
+
+    [Parameter]
+    public EventCallback<string> PromptChanged { get; set; }
+
+    [Parameter]
+    public EventCallback OnSubmit { get; set; }
+
+    private Task HandleSubmit() => OnSubmit.InvokeAsync();
+
+    private Task HandlePromptChanged(ChangeEventArgs args) =>
+        PromptChanged.InvokeAsync(args.Value?.ToString() ?? string.Empty);
+}

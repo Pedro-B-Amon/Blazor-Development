@@ -1,5 +1,8 @@
 using Microsoft.Data.Sqlite;
 using WikiGraph.Api;
+using WikiGraph.Api.Application.Services;
+using WikiGraph.Api.Infrastructure.Persistence;
+using WikiGraph.Api.Infrastructure.Wikipedia;
 using WikiGraph.Contracts;
 using Xunit;
 
@@ -11,11 +14,23 @@ public class SessionStoreTests
     public void AppendQuery_PersistsSessionArtifacts()
     {
         var path = Path.Combine(Path.GetTempPath(), $"wikigraph-tests-{Guid.NewGuid():N}.db");
-        var store = new SqliteSessionStore(new TestConnectionFactory(path));
+        var connectionFactory = new TestConnectionFactory(path);
+        var memoryDb = new SessionMemoryDb(connectionFactory);
+        var repository = new SqliteSessionRepository(connectionFactory, memoryDb);
+        var vectorStore = new SqliteVectorStore(connectionFactory, memoryDb);
+        var orchestrator = new QueryOrchestrator(
+            new WikipediaApiClient(),
+            new WikipediaIngestionService(),
+            new RagRetrievalService(vectorStore),
+            new AISummarizer(),
+            new GraphBuilderService(),
+            repository,
+            vectorStore);
 
-        var response = store.AppendQuery(new QueryRequest("sess-1", "Climate adaptation", null));
-        var session = store.GetSession("sess-1");
-        var reopenedStore = new SqliteSessionStore(new TestConnectionFactory(path));
+        var response = orchestrator.Execute(new QueryRequest("sess-1", "Climate adaptation", null));
+        var session = repository.GetSession("sess-1");
+        var reopenedMemoryDb = new SessionMemoryDb(new TestConnectionFactory(path));
+        var reopenedStore = new SqliteSessionRepository(new TestConnectionFactory(path), reopenedMemoryDb);
         var persisted = reopenedStore.GetSession("sess-1");
 
         Assert.Equal("sess-1", response.SessionId);
@@ -34,9 +49,11 @@ public class SessionStoreTests
     [Fact]
     public void CreateSession_ReturnsSortedSessions()
     {
-        var store = new SqliteSessionStore(new TestConnectionFactory(Path.Combine(Path.GetTempPath(), $"wikigraph-tests-{Guid.NewGuid():N}.db")));
+        var connectionFactory = new TestConnectionFactory(Path.Combine(Path.GetTempPath(), $"wikigraph-tests-{Guid.NewGuid():N}.db"));
+        var store = new SqliteSessionRepository(connectionFactory, new SessionMemoryDb(connectionFactory));
 
         store.CreateSession("First");
+        Thread.Sleep(20);
         store.CreateSession("Second");
 
         var sessions = store.GetSessions();
@@ -51,6 +68,9 @@ public class SessionStoreTests
         {
             var connection = new SqliteConnection($"Data Source={path}");
             connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "PRAGMA foreign_keys = ON;";
+            command.ExecuteNonQuery();
             return connection;
         }
     }

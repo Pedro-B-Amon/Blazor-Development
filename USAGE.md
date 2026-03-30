@@ -8,9 +8,25 @@
 - `WikiGraph.Contracts`: Shared DTOs used by the API, UI, and tests.
 - `WikiGraph.Tests`: API and persistence tests.
 
+The API now follows a layered structure:
+
+- `Controllers`: REST endpoints
+- `Application/Services`: orchestrator, summarizer, graph builder, ingestion, retrieval
+- `Infrastructure/Persistence`: SQLite schema, repository, vector store
+- `Infrastructure/Wikipedia`: Wikipedia content boundary
+
+The WASM client is now split into:
+
+- `Components/ChatSidebar`
+- `Components/ChatThread`
+- `Components/MessageView`
+- `Components/CitationList`
+- `Components/GraphView`
+- `Services/ApiClient`
+
 ## Prerequisites
 
-- .NET 9 SDK
+- .NET 10 SDK
 - SQLite is bundled through `Microsoft.Data.Sqlite`; no separate database server is required
 
 ## Configuration
@@ -61,9 +77,9 @@ The client expects the API to be reachable at:
 http://localhost:5000
 ```
 
-If you want to use a different API host or port, update the hardcoded API base URL in:
+If you want to use a different API host or port, update:
 
-- `WikiGraph.Client/Pages/Home.razor`
+- `WikiGraph.Client/wwwroot/appsettings.json`
 
 ## Run the server-rendered web shell
 
@@ -86,15 +102,43 @@ The tests cover:
 - SQLite-backed session persistence
 - API query endpoint behavior
 
+## Generate UML artifacts
+
+The implementation diagrams in `README.md` are extracted automatically when the API project builds.
+
+Manual generation:
+
+```bash
+bash scripts/generate-uml.sh README.md docs/uml
+```
+
+Generated files:
+
+- `docs/uml/*.puml`
+- `docs/uml/README.md`
+
+If `plantuml` is installed, or `PLANTUML_JAR` points to a PlantUML jar, SVG files are rendered automatically too.
+
 ### Test runner note
 
-In this container, `dotnet test` currently aborts with an ARM64 VSTest host lookup error:
+In this container on March 29, 2026:
+
+- `dotnet build WikiGraph.Api/WikiGraph.Api.csproj --no-restore` succeeds and generates UML artifacts in `docs/uml`.
+- `dotnet build WikiGraph.Web/WikiGraph.Web.csproj` succeeds.
+- `dotnet build WikiGraph.Client/WikiGraph.Client.csproj --no-restore` is blocked by a WebAssembly SDK task-host error:
+
+```text
+Could not run the "ComputeWasmBuildAssets" task because MSBuild could not create or connect to a task host with runtime "NET" and architecture "x64".
+```
+
+- `dotnet build WikiGraph.Tests/WikiGraph.Tests.csproj` currently aborts early in this container with an opaque MSBuild failure that does not surface a normal diagnostic message.
+- `dotnet test` currently aborts with an ARM64 VSTest host lookup error:
 
 ```text
 Could not find 'dotnet' host for the 'ARM64' architecture.
 ```
 
-The projects themselves build successfully. If you hit this locally, confirm that the ARM64 .NET host/runtime for your platform is installed and that `dotnet --info` reports a matching runtime environment.
+If you hit this locally, confirm that your installed .NET SDK/runtime set matches the repo target framework and that the WebAssembly and test host workloads for your platform are available.
 
 ## Validate endpoints manually
 
