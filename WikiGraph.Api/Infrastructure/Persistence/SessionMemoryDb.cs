@@ -1,3 +1,5 @@
+using Microsoft.Data.Sqlite;
+
 namespace WikiGraph.Api.Infrastructure.Persistence;
 
 public sealed class SessionMemoryDb
@@ -54,10 +56,13 @@ public sealed class SessionMemoryDb
             CREATE TABLE IF NOT EXISTS Citations (
                 CitationId INTEGER PRIMARY KEY AUTOINCREMENT,
                 SessionId TEXT NOT NULL,
+                MessageId INTEGER NULL,
                 Title TEXT NOT NULL,
                 Url TEXT NOT NULL,
                 Section TEXT NULL,
-                FOREIGN KEY(SessionId) REFERENCES Sessions(SessionId) ON DELETE CASCADE
+                ChunkId TEXT NULL,
+                FOREIGN KEY(SessionId) REFERENCES Sessions(SessionId) ON DELETE CASCADE,
+                FOREIGN KEY(MessageId) REFERENCES Messages(MessageId) ON DELETE CASCADE
             );
             """);
 
@@ -98,9 +103,18 @@ public sealed class SessionMemoryDb
             CREATE TABLE IF NOT EXISTS ChunkEmbeddings (
                 ChunkId TEXT PRIMARY KEY,
                 Embedding BLOB NOT NULL,
+                EncodingKind TEXT NOT NULL DEFAULT 'keywords',
+                ModelId TEXT NULL,
+                Dimensions INTEGER NULL,
                 FOREIGN KEY(ChunkId) REFERENCES DocumentChunks(ChunkId) ON DELETE CASCADE
             );
             """);
+
+        EnsureColumn(connection, "Citations", "MessageId", "INTEGER NULL");
+        EnsureColumn(connection, "Citations", "ChunkId", "TEXT NULL");
+        EnsureColumn(connection, "ChunkEmbeddings", "EncodingKind", "TEXT NOT NULL DEFAULT 'keywords'");
+        EnsureColumn(connection, "ChunkEmbeddings", "ModelId", "TEXT NULL");
+        EnsureColumn(connection, "ChunkEmbeddings", "Dimensions", "INTEGER NULL");
 
         using var seedCommand = connection.CreateCommand();
         seedCommand.CommandText = """
@@ -110,5 +124,22 @@ public sealed class SessionMemoryDb
         seedCommand.Parameters.AddWithValue("$userId", DefaultUserId);
         seedCommand.Parameters.AddWithValue("$createdUtc", DateTime.UtcNow.ToString("O"));
         seedCommand.ExecuteNonQuery();
+    }
+
+    private static void EnsureColumn(SqliteConnection connection, string tableName, string columnName, string columnDefinition)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = $"PRAGMA table_info({tableName});";
+
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            if (reader.GetString(1).Equals(columnName, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+        }
+
+        connection.ExecuteNonQuery($"ALTER TABLE {tableName} ADD COLUMN {columnName} {columnDefinition};");
     }
 }

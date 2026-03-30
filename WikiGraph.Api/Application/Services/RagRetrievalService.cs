@@ -13,6 +13,6 @@ public sealed class RagRetrievalService : IRagRetrievalService
         _vectorStore = vectorStore;
     }
 
-    public IReadOnlyList<RetrievedContext> RetrieveContext(string sessionId, string prompt, int topK = 3) =>
-        _vectorStore.Search(sessionId, prompt, topK);
+    public Task<IReadOnlyList<RetrievedContext>> RetrieveContextAsync(string sessionId, string prompt, int topK = 3, CancellationToken cancellationToken = default) =>
+        _vectorStore.SearchAsync(sessionId, prompt, topK, cancellationToken);
 }

@@ -8,7 +8,7 @@ This project reduces time spent researching by accepting a Wikipedia topic or ar
 
 ## 2) System architecture overview
 
-The system is implemented as a web application with a strict separation between the browser UI and server-side services. The client is a Blazor WebAssembly `UserInterface` composed of Razor components that render content and capture input, while retrieval, summarization, graph building, and persistence run behind an ASP.NET Core REST API. The UI communicates with the API over HTTP/JSON using shared DTO contracts so the client only depends on stable request/response models rather than internal entities. The API is now organized into controllers, application services, and infrastructure boundaries: `QueryController` and `SessionController` sit at the edge; `QueryOrchestrator` coordinates the RAG-style workflow; `WikipediaApiClient`, `SqliteSessionRepository`, and `SqliteVectorStore` live behind interfaces for future external integrations. The current implementation stays local-first and deterministic: it prepares Wikipedia-shaped content, citations, and graph data without requiring live MediaWiki or LLM credentials, while still preserving the same architectural seams described in the design. :contentReference[oaicite:1]{index=1}
+The system is implemented as a web application with a strict separation between the browser UI and server-side services. The client is a Blazor WebAssembly `UserInterface` composed of Razor components that render content and capture input, while retrieval, summarization, graph building, and persistence run behind an ASP.NET Core REST API. The UI communicates with the API over HTTP/JSON using shared DTO contracts so the client only depends on stable request/response models rather than internal entities. The API is now organized into controllers, application services, and infrastructure boundaries: `QueryController` and `SessionController` sit at the edge; `QueryOrchestrator` coordinates the RAG-style workflow; `WikipediaApiClient`, `SqliteSessionRepository`, and `SqliteVectorStore` live behind interfaces for future external integrations. The current implementation supports Semantic Kernel / OpenAI chat completion and embedding generation when configured, while preserving deterministic local fallbacks for summarization and retrieval when API credentials are absent. :contentReference[oaicite:1]{index=1}
 
 ## 3) User interface (Blazor WASM)
 
@@ -48,11 +48,11 @@ The RAG-style workflow is coordinated by `QueryOrchestrator` and shaped by `AISu
 1. **Load session state:** retrieve the session and message history from SQLite.
 2. **Resolve Wikipedia content:** call `WikipediaApiClient` to normalize the prompt or URL into a canonical page plus structured sections.
 3. **Normalize and chunk:** `WikipediaIngestionService` segments the page into deterministic chunks suitable for retrieval and stores stable identifiers and hashes.
-4. **Upsert retrieval memory:** `SqliteVectorStore` stores chunks plus serialized term embeddings in SQLite.
+4. **Upsert retrieval memory:** `SqliteVectorStore` stores chunks plus either semantic embeddings or deterministic keyword encodings in SQLite, along with embedding model metadata.
 5. **Retrieve relevant context:** `RagRetrievalService` performs local similarity scoring to select top-k chunks for the query.
 6. **Generate grounded outputs:** `AISummarizer` and `GraphBuilderService` produce:
    - study-guide text,
-   - citations (Wikipedia URLs and chunk identifiers), and
+   - citations (Wikipedia URLs plus chunk identifiers), and
    - one or more topic graphs (nodes/edges) centered on the user’s topic prompt and derived core topics.
 7. **Persist outputs:** append new messages, citations, graphs, and retrieval memory to SQLite.
 8. **Return JSON payload:** send `QueryResponse` to the UI containing text + citations + graph data.
@@ -66,7 +66,7 @@ All user data is stored in SQLite for reliable retrieval. The SQLite database is
 - **Sessions / chats:** session identifiers, titles/topics, created/last-access timestamps
 - **Messages:** role (user/assistant), content, timestamps, ordering
 - **Wikipedia artifacts:** page identifiers, source URLs, chunk metadata, hashes for deduplication
-- **Vector memory:** embeddings and embedding model metadata (stored as BLOB/JSON)
+- **Vector memory:** embeddings or keyword encodings and embedding model metadata (stored as BLOB/JSON)
 - **Citations:** links between assistant responses and the Wikipedia sources/chunks used
 - **Graphs:** graph definitions keyed by session and core topic; node and edge records
 
@@ -97,12 +97,12 @@ Persistence is accessed through a boundary such as `SessionMemory_DB` and implem
 - `SqliteSessionRepository` (sessions/messages/citations/graphs)
 - `SqliteVectorStore` (chunks/embeddings/similarity retrieval)
 
-Polymorphism is primarily supported through interfaces such as `IWikiClient`, `ISessionRepository`, `IVectorStore`, `IRagRetrievalService`, and `IWikipediaIngestionService`, while inheritance is used where it matches the framework (e.g., controllers deriving from `ControllerBase`). :contentReference[oaicite:5]{index=5}
+Polymorphism is primarily supported through interfaces such as `IWikiClient`, `ISessionRepository`, `IVectorStore`, `IRagRetrievalService`, and `IWikipediaIngestionService`, while inheritance is used where it matches the framework (e.g., controllers deriving from `ControllerBase`). Semantic Kernel services are injected behind these boundaries so the same orchestration flow can operate with OpenAI-backed or deterministic local behavior. :contentReference[oaicite:5]{index=5}
 
 ### Implemented folder structure
 - `WikiGraph.Api/Controllers` contains the REST edge (`QueryController`, `SessionController`, `HealthController`).
 - `WikiGraph.Api/Application/Abstractions` defines orchestration/service contracts.
-- `WikiGraph.Api/Application/Services` contains the deterministic RAG pipeline.
+- `WikiGraph.Api/Application/Services` contains the RAG pipeline, including Semantic Kernel-backed summarization and embedding fallbacks.
 - `WikiGraph.Api/Application/Models` contains internal workflow records (`WikipediaPage`, `WikipediaChunk`, `RetrievedContext`, `QueryArtifacts`).
 - `WikiGraph.Api/Infrastructure/Persistence` owns SQLite schema, repositories, and vector memory.
 - `WikiGraph.Api/Infrastructure/Wikipedia` contains the Wikipedia content boundary.

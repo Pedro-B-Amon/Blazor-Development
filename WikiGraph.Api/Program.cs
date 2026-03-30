@@ -3,7 +3,7 @@ using WikiGraph.Contracts;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddWikiGraphApi();
+builder.Services.AddWikiGraphApi(builder.Configuration);
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>

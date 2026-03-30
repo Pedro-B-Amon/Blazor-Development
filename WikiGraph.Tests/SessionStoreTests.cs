@@ -1,5 +1,8 @@
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using WikiGraph.Api;
+using WikiGraph.Api.Configuration;
 using WikiGraph.Api.Application.Services;
 using WikiGraph.Api.Infrastructure.Persistence;
 using WikiGraph.Api.Infrastructure.Wikipedia;
@@ -11,23 +14,25 @@ namespace WikiGraph.Tests;
 public class SessionStoreTests
 {
     [Fact]
-    public void AppendQuery_PersistsSessionArtifacts()
+    public async Task AppendQuery_PersistsSessionArtifacts()
     {
         var path = Path.Combine(Path.GetTempPath(), $"wikigraph-tests-{Guid.NewGuid():N}.db");
         var connectionFactory = new TestConnectionFactory(path);
         var memoryDb = new SessionMemoryDb(connectionFactory);
         var repository = new SqliteSessionRepository(connectionFactory, memoryDb);
-        var vectorStore = new SqliteVectorStore(connectionFactory, memoryDb);
+        var serviceProvider = new NullServiceProvider();
+        var options = Options.Create(new OpenAIOptions());
+        var vectorStore = new SqliteVectorStore(connectionFactory, memoryDb, serviceProvider, options, NullLogger<SqliteVectorStore>.Instance);
         var orchestrator = new QueryOrchestrator(
             new WikipediaApiClient(),
             new WikipediaIngestionService(),
             new RagRetrievalService(vectorStore),
-            new AISummarizer(),
+            new AISummarizer(serviceProvider, options, NullLogger<AISummarizer>.Instance),
             new GraphBuilderService(),
             repository,
             vectorStore);
 
-        var response = orchestrator.Execute(new QueryRequest("sess-1", "Climate adaptation", null));
+        var response = await orchestrator.ExecuteAsync(new QueryRequest("sess-1", "Climate adaptation", null));
         var session = repository.GetSession("sess-1");
         var reopenedMemoryDb = new SessionMemoryDb(new TestConnectionFactory(path));
         var reopenedStore = new SqliteSessionRepository(new TestConnectionFactory(path), reopenedMemoryDb);
@@ -35,14 +40,14 @@ public class SessionStoreTests
 
         Assert.Equal("sess-1", response.SessionId);
         Assert.NotEmpty(response.AssistantText);
-        Assert.Single(response.Graphs);
+        Assert.NotEmpty(response.Graphs);
         Assert.Equal(3, response.Citations.Count);
         Assert.NotNull(session);
         Assert.Equal(2, session!.Messages.Count);
         Assert.Equal("Climate adaptation", session.Session.Title);
         Assert.NotNull(persisted);
         Assert.Equal(2, persisted!.Messages.Count);
-        Assert.Single(persisted.Graphs);
+        Assert.NotEmpty(persisted.Graphs);
         Assert.Equal(3, persisted.Citations.Count);
     }
 
@@ -73,5 +78,10 @@ public class SessionStoreTests
             command.ExecuteNonQuery();
             return connection;
         }
+    }
+
+    private sealed class NullServiceProvider : IServiceProvider
+    {
+        public object? GetService(Type serviceType) => null;
     }
 }

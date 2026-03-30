@@ -16,13 +16,18 @@ public sealed class QueryController : ControllerBase
     }
 
     [HttpPost]
-    public ActionResult<QueryResponse> Query([FromBody] QueryRequest request)
+    public async Task<ActionResult<QueryResponse>> Query([FromBody] QueryRequest request, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(request.SessionId) || string.IsNullOrWhiteSpace(request.Prompt))
+        if (string.IsNullOrWhiteSpace(request.SessionId))
         {
-            return BadRequest(new { error = "SessionId and Prompt are required." });
+            return BadRequest(new { error = "SessionId is required." });
         }
 
-        return Ok(_queryOrchestrator.Execute(request));
+        if (string.IsNullOrWhiteSpace(request.Prompt) && string.IsNullOrWhiteSpace(request.SourceUrl))
+        {
+            return BadRequest(new { error = "Prompt or SourceUrl is required." });
+        }
+
+        return Ok(await _queryOrchestrator.ExecuteAsync(request, cancellationToken));
     }
 }

@@ -1,19 +1,25 @@
-<div class="citations">
-    @if (Citations.Count == 0)
-    {
-        <p class="muted">Citations will appear after the first response.</p>
-    }
-    else
-    {
+@if (Citations.Count == 0)
+{
+    <div class="empty-card">
+        <strong>No citations yet</strong>
+        <p class="muted">Source passages will appear after the first assistant response.</p>
+    </div>
+}
+else
+{
+    <div class="citations">
         @foreach (var citation in Citations)
         {
             <a class="citation" href="@citation.Url" target="_blank" rel="noreferrer">
-                <strong>@citation.Title</strong>
-                <span>@citation.Section</span>
+                <div class="citation-copy">
+                    <strong>@citation.Title</strong>
+                    <span>@(string.IsNullOrWhiteSpace(citation.Section) ? "Wikipedia excerpt" : citation.Section)</span>
+                </div>
+                <span class="citation-link">Open</span>
             </a>
         }
-    }
-</div>
+    </div>
+}
 
 @code {
     [Parameter]

@@ -34,26 +34,87 @@ public sealed class QueryOrchestrator : IQueryOrchestrator
         _vectorStore = vectorStore;
     }
 
-    public QueryResponse Execute(QueryRequest request)
+    public async Task<QueryResponse> ExecuteAsync(QueryRequest request, CancellationToken cancellationToken = default)
     {
-        var page = _wikiClient.ResolvePage(request.Prompt, request.SourceUrl);
-        var chunks = _ingestionService.CreateChunks(page);
-        _vectorStore.Upsert(request.SessionId, page, chunks);
+        var existingSession = _sessionRepository.GetSession(request.SessionId);
+        var priorMessages = existingSession?.Messages ?? [];
 
-        var context = _retrievalService.RetrieveContext(request.SessionId, request.Prompt, 3);
-        var answer = _summarizer.Generate(request, page, context);
-        var graphs = _graphBuilder.BuildGraphs(request, page, context);
-
+        var seedPrompt = ResolveSeedPrompt(request);
+        var page = _wikiClient.ResolvePage(seedPrompt, request.SourceUrl);
+        var effectivePrompt = ResolveEffectivePrompt(request, page);
+        var normalizedRequest = request with { Prompt = effectivePrompt };
         var nowUtc = DateTime.UtcNow;
+        _sessionRepository.EnsureSession(request.SessionId, InferTitle(effectivePrompt), nowUtc);
+        var chunks = _ingestionService.CreateChunks(page);
+        await _vectorStore.UpsertAsync(request.SessionId, page, chunks, cancellationToken);
+
+        var retrievalPrompt = BuildRetrievalPrompt(effectivePrompt, priorMessages);
+        var context = await _retrievalService.RetrieveContextAsync(request.SessionId, retrievalPrompt, 4, cancellationToken);
+        var answer = await _summarizer.GenerateAsync(normalizedRequest, effectivePrompt, page, priorMessages, context, cancellationToken);
+        var graphs = _graphBuilder.BuildGraphs(normalizedRequest, page, context);
+
         _sessionRepository.SaveQueryArtifacts(new QueryArtifacts(
             request.SessionId,
-            InferTitle(request.Prompt),
-            new MessageDto("user", request.Prompt, nowUtc),
+            InferTitle(effectivePrompt),
+            new MessageDto("user", BuildUserMessageContent(request, effectivePrompt), nowUtc),
             new MessageDto("assistant", answer.AssistantText, nowUtc),
             answer.Citations,
             graphs));
 
         return new QueryResponse(request.SessionId, answer.AssistantText, answer.Citations, graphs);
+    }
+
+    private static string ResolveSeedPrompt(QueryRequest request)
+    {
+        if (!string.IsNullOrWhiteSpace(request.Prompt))
+        {
+            return request.Prompt.Trim();
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.SourceUrl))
+        {
+            return request.SourceUrl.Trim();
+        }
+
+        return "Wikipedia topic";
+    }
+
+    private static string ResolveEffectivePrompt(QueryRequest request, WikipediaPage page)
+    {
+        if (!string.IsNullOrWhiteSpace(request.Prompt))
+        {
+            return request.Prompt.Trim();
+        }
+
+        return page.Title;
+    }
+
+    private static string BuildUserMessageContent(QueryRequest request, string effectivePrompt)
+    {
+        if (string.IsNullOrWhiteSpace(request.SourceUrl))
+        {
+            return effectivePrompt;
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Prompt))
+        {
+            return $"Wikipedia URL: {request.SourceUrl}";
+        }
+
+        return $"{effectivePrompt}{Environment.NewLine}Wikipedia URL: {request.SourceUrl}";
+    }
+
+    private static string BuildRetrievalPrompt(string effectivePrompt, IReadOnlyList<MessageDto> priorMessages)
+    {
+        var priorUserFocus = priorMessages
+            .Where(message => string.Equals(message.Role, "user", StringComparison.OrdinalIgnoreCase))
+            .TakeLast(2)
+            .Select(message => message.Content)
+            .ToArray();
+
+        return priorUserFocus.Length == 0
+            ? effectivePrompt
+            : $"{effectivePrompt} {string.Join(' ', priorUserFocus)}";
     }
 
     private static string InferTitle(string prompt)

@@ -5,5 +5,11 @@ namespace WikiGraph.Api.Application.Abstractions;
 
 public interface IAISummarizer
 {
-    GeneratedAnswer Generate(QueryRequest request, WikipediaPage page, IReadOnlyList<RetrievedContext> context);
+    Task<GeneratedAnswer> GenerateAsync(
+        QueryRequest request,
+        string effectivePrompt,
+        WikipediaPage page,
+        IReadOnlyList<MessageDto> sessionHistory,
+        IReadOnlyList<RetrievedContext> context,
+        CancellationToken cancellationToken = default);
 }

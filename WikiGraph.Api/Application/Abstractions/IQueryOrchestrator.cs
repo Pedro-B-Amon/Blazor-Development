@@ -4,5 +4,5 @@ namespace WikiGraph.Api.Application.Abstractions;
 
 public interface IQueryOrchestrator
 {
-    QueryResponse Execute(QueryRequest request);
+    Task<QueryResponse> ExecuteAsync(QueryRequest request, CancellationToken cancellationToken = default);
 }

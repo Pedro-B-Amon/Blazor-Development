@@ -57,7 +57,17 @@ public sealed class WikipediaApiClient : IWikiClient
             }
         }
 
-        return prompt.Trim();
+        if (!string.IsNullOrWhiteSpace(prompt))
+        {
+            return prompt.Trim();
+        }
+
+        if (!string.IsNullOrWhiteSpace(sourceUrl))
+        {
+            return sourceUrl.Trim();
+        }
+
+        return "Wikipedia topic";
     }
 
     private static string ResolveUrl(string title, string? sourceUrl)

@@ -26,6 +26,26 @@ public sealed class SqliteSessionRepository : ISessionRepository
         return session;
     }
 
+    public void EnsureSession(string sessionId, string title, DateTime accessedUtc)
+    {
+        using var connection = _connectionFactory.OpenConnection();
+        var existingSession = LoadSession(connection, sessionId);
+        if (existingSession is null)
+        {
+            InsertSession(
+                connection,
+                new SessionSummary(sessionId, title, accessedUtc, accessedUtc),
+                SessionMemoryDb.DefaultUserId,
+                null);
+            return;
+        }
+
+        var resolvedTitle = existingSession.Value.summary.Title == "New session" ? title : existingSession.Value.summary.Title;
+        using var transaction = connection.BeginTransaction();
+        UpdateSession(connection, sessionId, resolvedTitle, accessedUtc, transaction);
+        transaction.Commit();
+    }
+
     public IReadOnlyList<SessionSummary> GetSessions()
     {
         using var connection = _connectionFactory.OpenConnection();
@@ -94,11 +114,11 @@ public sealed class SqliteSessionRepository : ISessionRepository
         }
 
         InsertMessage(connection, artifacts.SessionId, artifacts.UserMessage, transaction);
-        InsertMessage(connection, artifacts.SessionId, artifacts.AssistantMessage, transaction);
+        var assistantMessageId = InsertMessage(connection, artifacts.SessionId, artifacts.AssistantMessage, transaction);
 
         foreach (var citation in artifacts.Citations)
         {
-            InsertCitation(connection, artifacts.SessionId, citation, transaction);
+            InsertCitation(connection, artifacts.SessionId, assistantMessageId, citation, transaction);
         }
 
         foreach (var graph in artifacts.Graphs)
@@ -140,7 +160,7 @@ public sealed class SqliteSessionRepository : ISessionRepository
         command.ExecuteNonQuery();
     }
 
-    private static void InsertMessage(SqliteConnection connection, string sessionId, MessageDto message, SqliteTransaction transaction)
+    private static long InsertMessage(SqliteConnection connection, string sessionId, MessageDto message, SqliteTransaction transaction)
     {
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
@@ -153,20 +173,27 @@ public sealed class SqliteSessionRepository : ISessionRepository
         command.Parameters.AddWithValue("$content", message.Content);
         command.Parameters.AddWithValue("$createdUtc", message.CreatedUtc.ToString("O"));
         command.ExecuteNonQuery();
+
+        using var idCommand = connection.CreateCommand();
+        idCommand.Transaction = transaction;
+        idCommand.CommandText = "SELECT last_insert_rowid();";
+        return (long)(idCommand.ExecuteScalar() ?? 0L);
     }
 
-    private static void InsertCitation(SqliteConnection connection, string sessionId, CitationDto citation, SqliteTransaction transaction)
+    private static void InsertCitation(SqliteConnection connection, string sessionId, long assistantMessageId, CitationDto citation, SqliteTransaction transaction)
     {
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            INSERT INTO Citations (SessionId, Title, Url, Section)
-            VALUES ($sessionId, $title, $url, $section);
+            INSERT INTO Citations (SessionId, MessageId, Title, Url, Section, ChunkId)
+            VALUES ($sessionId, $messageId, $title, $url, $section, $chunkId);
             """;
         command.Parameters.AddWithValue("$sessionId", sessionId);
+        command.Parameters.AddWithValue("$messageId", assistantMessageId);
         command.Parameters.AddWithValue("$title", citation.Title);
         command.Parameters.AddWithValue("$url", citation.Url);
         command.Parameters.AddWithValue("$section", (object?)citation.Section ?? DBNull.Value);
+        command.Parameters.AddWithValue("$chunkId", (object?)citation.ChunkId ?? DBNull.Value);
         command.ExecuteNonQuery();
     }
 
@@ -227,10 +254,10 @@ public sealed class SqliteSessionRepository : ISessionRepository
     {
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT Title, Url, Section
+            SELECT Title, Url, Section, ChunkId
             FROM Citations
             WHERE SessionId = $sessionId
-            ORDER BY CitationId ASC;
+            ORDER BY COALESCE(MessageId, 0) ASC, CitationId ASC;
             """;
         command.Parameters.AddWithValue("$sessionId", sessionId);
 
@@ -238,7 +265,11 @@ public sealed class SqliteSessionRepository : ISessionRepository
         var citations = new List<CitationDto>();
         while (reader.Read())
         {
-            citations.Add(new CitationDto(reader.GetString(0), reader.GetString(1), reader.IsDBNull(2) ? null : reader.GetString(2)));
+            citations.Add(new CitationDto(
+                reader.GetString(0),
+                reader.GetString(1),
+                reader.IsDBNull(2) ? null : reader.GetString(2),
+                reader.IsDBNull(3) ? null : reader.GetString(3)));
         }
 
         return citations;
