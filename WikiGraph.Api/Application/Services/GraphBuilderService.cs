@@ -4,10 +4,14 @@ using WikiGraph.Contracts;
 
 namespace WikiGraph.Api.Application.Services;
 
+/// <summary>
+/// Builds a small, readable topic graph that mirrors the article and the retrieved context.
+/// </summary>
 public sealed class GraphBuilderService : IGraphBuilderService
 {
     public IReadOnlyList<GraphDto> BuildGraphs(QueryRequest request, WikipediaPage page, IReadOnlyList<RetrievedContext> context)
     {
+        // The first topic is the request itself; the remaining topics come from the article and the retrieved sections.
         var graphTopics = new[] { request.Prompt }
             .Concat(page.RelatedTopics)
             .Concat(context.Select(item => $"{page.Title} {item.Section}"))
@@ -23,6 +27,7 @@ public sealed class GraphBuilderService : IGraphBuilderService
 
     private static GraphDto BuildGraph(string topic, WikipediaPage page, IReadOnlyList<RetrievedContext> context, bool includeArticleAnchor)
     {
+        // Favor labels that are already visible in the article or retrieved context so the graph feels grounded.
         var relatedLabels = page.RelatedTopics
             .Concat(context.Select(item => item.Section))
             .Concat(includeArticleAnchor ? [page.Title] : [])

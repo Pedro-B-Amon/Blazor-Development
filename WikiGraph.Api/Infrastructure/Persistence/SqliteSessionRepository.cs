@@ -6,13 +6,18 @@ using WikiGraph.Contracts;
 
 namespace WikiGraph.Api.Infrastructure.Persistence;
 
+/// <summary>
+/// Stores sessions, messages, citations, and graphs in SQLite using one local database file.
+/// </summary>
 public sealed class SqliteSessionRepository : ISessionRepository
 {
+    private const string DefaultSessionTitle = "New session";
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly ISqliteConnectionFactory _connectionFactory;
 
     public SqliteSessionRepository(ISqliteConnectionFactory connectionFactory, SessionMemoryDb _)
     {
+        // SessionMemoryDb is injected for its schema/bootstrap side effects.
         _connectionFactory = connectionFactory;
     }
 
@@ -40,9 +45,8 @@ public sealed class SqliteSessionRepository : ISessionRepository
             return;
         }
 
-        var resolvedTitle = existingSession.Value.summary.Title == "New session" ? title : existingSession.Value.summary.Title;
         using var transaction = connection.BeginTransaction();
-        UpdateSession(connection, sessionId, resolvedTitle, accessedUtc, transaction);
+        UpdateSession(connection, sessionId, ResolveSessionTitle(existingSession.Title, title), accessedUtc, transaction);
         transaction.Commit();
     }
 
@@ -71,13 +75,14 @@ public sealed class SqliteSessionRepository : ISessionRepository
     public SessionDetailDto? GetSession(string sessionId)
     {
         using var connection = _connectionFactory.OpenConnection();
-        if (LoadSession(connection, sessionId) is not { } session)
+        var session = LoadSession(connection, sessionId);
+        if (session is null)
         {
             return null;
         }
 
         return new SessionDetailDto(
-            session.summary,
+            session,
             LoadMessages(connection, sessionId),
             LoadCitations(connection, sessionId),
             LoadGraphs(connection, sessionId));
@@ -106,11 +111,7 @@ public sealed class SqliteSessionRepository : ISessionRepository
         }
         else
         {
-            var title = existingSession.Value.summary.Title == "New session"
-                ? artifacts.SessionTitle
-                : existingSession.Value.summary.Title;
-
-            UpdateSession(connection, artifacts.SessionId, title, accessedUtc, transaction);
+            UpdateSession(connection, artifacts.SessionId, ResolveSessionTitle(existingSession.Title, artifacts.SessionTitle), accessedUtc, transaction);
         }
 
         InsertMessage(connection, artifacts.SessionId, artifacts.UserMessage, transaction);
@@ -128,6 +129,14 @@ public sealed class SqliteSessionRepository : ISessionRepository
 
         transaction.Commit();
     }
+
+    /// <summary>
+    /// Keeps the original title unless the session still has the default placeholder title.
+    /// </summary>
+    private static string ResolveSessionTitle(string currentTitle, string requestedTitle) =>
+        string.Equals(currentTitle, DefaultSessionTitle, StringComparison.OrdinalIgnoreCase)
+            ? requestedTitle
+            : currentTitle;
 
     private static void InsertSession(SqliteConnection connection, SessionSummary session, string userId, SqliteTransaction? transaction)
     {
@@ -212,7 +221,7 @@ public sealed class SqliteSessionRepository : ISessionRepository
         command.ExecuteNonQuery();
     }
 
-    private static (SessionSummary summary, bool exists)? LoadSession(SqliteConnection connection, string sessionId)
+    private static SessionSummary? LoadSession(SqliteConnection connection, string sessionId)
     {
         using var command = connection.CreateCommand();
         command.CommandText = """
@@ -223,7 +232,7 @@ public sealed class SqliteSessionRepository : ISessionRepository
         command.Parameters.AddWithValue("$sessionId", sessionId);
 
         using var reader = command.ExecuteReader();
-        return reader.Read() ? (ReadSessionSummary(reader), true) : null;
+        return reader.Read() ? ReadSessionSummary(reader) : null;
     }
 
     private static IReadOnlyList<MessageDto> LoadMessages(SqliteConnection connection, string sessionId)

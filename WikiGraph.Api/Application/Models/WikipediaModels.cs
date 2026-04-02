@@ -3,8 +3,14 @@ using System.Text.RegularExpressions;
 
 namespace WikiGraph.Api.Application.Models;
 
+/// <summary>
+/// A single section extracted from a Wikipedia page.
+/// </summary>
 public sealed record WikipediaSection(string Heading, string Content);
 
+/// <summary>
+/// Canonical Wikipedia content and metadata used by ingestion, retrieval, and summarization.
+/// </summary>
 public sealed record WikipediaPage(
     string PageId,
     string Title,
@@ -13,6 +19,9 @@ public sealed record WikipediaPage(
     IReadOnlyList<WikipediaSection> Sections,
     IReadOnlyList<string> RelatedTopics);
 
+/// <summary>
+/// A chunk produced from a page section and stored for later retrieval.
+/// </summary>
 public sealed record WikipediaChunk(
     string ChunkId,
     string PageId,
@@ -21,6 +30,9 @@ public sealed record WikipediaChunk(
     string Hash,
     IReadOnlyList<string> Terms);
 
+/// <summary>
+/// The text snippets returned from retrieval and fed into summarization.
+/// </summary>
 public sealed record RetrievedContext(
     string ChunkId,
     string Section,
@@ -32,6 +44,9 @@ internal static partial class TextTokenizer
 {
     private static readonly TextInfo TextInfo = CultureInfo.InvariantCulture.TextInfo;
 
+    /// <summary>
+    /// Breaks text into stable, lowercase terms that can be used for chunking and keyword matching.
+    /// </summary>
     public static IReadOnlyList<string> ExtractTerms(string text, int maxTerms = int.MaxValue)
     {
         if (string.IsNullOrWhiteSpace(text))
@@ -48,12 +63,18 @@ internal static partial class TextTokenizer
             .ToArray();
     }
 
+    /// <summary>
+    /// Creates a predictable slug from a heading or topic label.
+    /// </summary>
     public static string Slugify(string value)
     {
         var slug = string.Join('-', ExtractTerms(value));
         return string.IsNullOrWhiteSpace(slug) ? "item" : slug;
     }
 
+    /// <summary>
+    /// Normalizes a label into title case for display.
+    /// </summary>
     public static string ToTitleCase(string value)
     {
         if (string.IsNullOrWhiteSpace(value))

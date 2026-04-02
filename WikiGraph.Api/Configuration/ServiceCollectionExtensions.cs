@@ -7,6 +7,9 @@ using WikiGraph.Api.Infrastructure.Wikipedia;
 
 namespace WikiGraph.Api.Configuration;
 
+/// <summary>
+/// Registers the API's controllers, services, persistence, and optional AI integrations.
+/// </summary>
 public static class ServiceCollectionExtensions
 {
     public static IServiceCollection AddWikiGraphApi(this IServiceCollection services, IConfiguration configuration)
@@ -29,6 +32,7 @@ public static class ServiceCollectionExtensions
         var openAIOptions = ResolveOpenAIOptions(configuration);
         if (openAIOptions.IsEnabled)
         {
+            // Register the OpenAI clients only when an API key is present so local runs stay fully offline-capable.
             services.AddOpenAIChatCompletion(
                 openAIOptions.ChatModelId,
                 openAIOptions.ApiKey!,

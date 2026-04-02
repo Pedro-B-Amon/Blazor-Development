@@ -2,6 +2,9 @@ using Microsoft.Data.Sqlite;
 
 namespace WikiGraph.Api.Infrastructure.Persistence;
 
+/// <summary>
+/// Owns the lightweight SQLite schema used for sessions, messages, citations, graphs, and page chunks.
+/// </summary>
 public sealed class SessionMemoryDb
 {
     public const string DefaultUserId = "local-device";
@@ -18,14 +21,16 @@ public sealed class SessionMemoryDb
     {
         using var connection = _connectionFactory.OpenConnection();
 
-        connection.ExecuteNonQuery("""
+        // Keep schema creation in one ordered list so new tables are easy to add without scattering setup calls.
+        string[] schemaStatements =
+        [
+            """
             CREATE TABLE IF NOT EXISTS Users (
                 UserId TEXT PRIMARY KEY,
                 CreatedUtc TEXT NOT NULL
             );
-            """);
-
-        connection.ExecuteNonQuery("""
+            """,
+            """
             CREATE TABLE IF NOT EXISTS Sessions (
                 SessionId TEXT PRIMARY KEY,
                 UserId TEXT NOT NULL,
@@ -34,14 +39,12 @@ public sealed class SessionMemoryDb
                 LastAccessUtc TEXT NOT NULL,
                 FOREIGN KEY(UserId) REFERENCES Users(UserId) ON DELETE CASCADE
             );
-            """);
-
-        connection.ExecuteNonQuery("""
+            """,
+            """
             CREATE INDEX IF NOT EXISTS IX_Sessions_UserId_LastAccessUtc
             ON Sessions (UserId, LastAccessUtc DESC);
-            """);
-
-        connection.ExecuteNonQuery("""
+            """,
+            """
             CREATE TABLE IF NOT EXISTS Messages (
                 MessageId INTEGER PRIMARY KEY AUTOINCREMENT,
                 SessionId TEXT NOT NULL,
@@ -50,9 +53,8 @@ public sealed class SessionMemoryDb
                 CreatedUtc TEXT NOT NULL,
                 FOREIGN KEY(SessionId) REFERENCES Sessions(SessionId) ON DELETE CASCADE
             );
-            """);
-
-        connection.ExecuteNonQuery("""
+            """,
+            """
             CREATE TABLE IF NOT EXISTS Citations (
                 CitationId INTEGER PRIMARY KEY AUTOINCREMENT,
                 SessionId TEXT NOT NULL,
@@ -64,9 +66,8 @@ public sealed class SessionMemoryDb
                 FOREIGN KEY(SessionId) REFERENCES Sessions(SessionId) ON DELETE CASCADE,
                 FOREIGN KEY(MessageId) REFERENCES Messages(MessageId) ON DELETE CASCADE
             );
-            """);
-
-        connection.ExecuteNonQuery("""
+            """,
+            """
             CREATE TABLE IF NOT EXISTS Graphs (
                 GraphId INTEGER PRIMARY KEY AUTOINCREMENT,
                 SessionId TEXT NOT NULL,
@@ -75,9 +76,8 @@ public sealed class SessionMemoryDb
                 EdgesJson TEXT NOT NULL,
                 FOREIGN KEY(SessionId) REFERENCES Sessions(SessionId) ON DELETE CASCADE
             );
-            """);
-
-        connection.ExecuteNonQuery("""
+            """,
+            """
             CREATE TABLE IF NOT EXISTS WikipediaPages (
                 PageId TEXT PRIMARY KEY,
                 SessionId TEXT NOT NULL,
@@ -86,9 +86,8 @@ public sealed class SessionMemoryDb
                 RetrievedUtc TEXT NOT NULL,
                 FOREIGN KEY(SessionId) REFERENCES Sessions(SessionId) ON DELETE CASCADE
             );
-            """);
-
-        connection.ExecuteNonQuery("""
+            """,
+            """
             CREATE TABLE IF NOT EXISTS DocumentChunks (
                 ChunkId TEXT PRIMARY KEY,
                 PageId TEXT NOT NULL,
@@ -97,9 +96,8 @@ public sealed class SessionMemoryDb
                 Hash TEXT NOT NULL,
                 FOREIGN KEY(PageId) REFERENCES WikipediaPages(PageId) ON DELETE CASCADE
             );
-            """);
-
-        connection.ExecuteNonQuery("""
+            """,
+            """
             CREATE TABLE IF NOT EXISTS ChunkEmbeddings (
                 ChunkId TEXT PRIMARY KEY,
                 Embedding BLOB NOT NULL,
@@ -108,7 +106,13 @@ public sealed class SessionMemoryDb
                 Dimensions INTEGER NULL,
                 FOREIGN KEY(ChunkId) REFERENCES DocumentChunks(ChunkId) ON DELETE CASCADE
             );
-            """);
+            """
+        ];
+
+        foreach (var statement in schemaStatements)
+        {
+            connection.ExecuteNonQuery(statement);
+        }
 
         EnsureColumn(connection, "Citations", "MessageId", "INTEGER NULL");
         EnsureColumn(connection, "Citations", "ChunkId", "TEXT NULL");
@@ -116,6 +120,7 @@ public sealed class SessionMemoryDb
         EnsureColumn(connection, "ChunkEmbeddings", "ModelId", "TEXT NULL");
         EnsureColumn(connection, "ChunkEmbeddings", "Dimensions", "INTEGER NULL");
 
+        // Seed the default local user once so session rows always have a valid parent user.
         using var seedCommand = connection.CreateCommand();
         seedCommand.CommandText = """
             INSERT OR IGNORE INTO Users (UserId, CreatedUtc)
@@ -128,6 +133,7 @@ public sealed class SessionMemoryDb
 
     private static void EnsureColumn(SqliteConnection connection, string tableName, string columnName, string columnDefinition)
     {
+        // Treat schema drift as a lightweight migration: only add the column when it is missing.
         using var command = connection.CreateCommand();
         command.CommandText = $"PRAGMA table_info({tableName});";
 

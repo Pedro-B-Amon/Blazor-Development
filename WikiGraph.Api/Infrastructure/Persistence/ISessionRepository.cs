@@ -3,6 +3,9 @@ using WikiGraph.Contracts;
 
 namespace WikiGraph.Api.Infrastructure.Persistence;
 
+/// <summary>
+/// Persists the chat session timeline and query artifacts.
+/// </summary>
 public interface ISessionRepository
 {
     SessionSummary CreateSession(string title);

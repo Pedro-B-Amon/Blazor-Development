@@ -9,6 +9,9 @@ using WikiGraph.Contracts;
 
 namespace WikiGraph.Api.Application.Services;
 
+/// <summary>
+/// Produces a grounded answer, preferring the model when available and falling back to deterministic text otherwise.
+/// </summary>
 public sealed class AISummarizer : IAISummarizer
 {
     private readonly IChatCompletionService? _chatCompletionService;
@@ -33,6 +36,7 @@ public sealed class AISummarizer : IAISummarizer
         var citations = BuildCitations(page, context);
         var fallbackText = BuildFallbackText(effectivePrompt, page, sessionHistory, context, citations);
 
+        // If the chat service is unavailable, the fallback path still returns a useful, fully grounded response.
         if (_chatCompletionService is null || !_options.IsEnabled)
         {
             return new GeneratedAnswer(fallbackText, citations);
@@ -115,18 +119,15 @@ public sealed class AISummarizer : IAISummarizer
             .Distinct()
             .ToArray();
 
-        if (citations.Length == 0)
-        {
-            citations =
-            [
-                new CitationDto(page.Title, page.SourceUrl, "Overview", null),
-                new CitationDto($"{page.Title} overview", page.SourceUrl, "Overview", null),
-                new CitationDto($"{page.Title} references", $"{page.SourceUrl}#references", "References", null)
-            ];
-        }
-
-        return citations;
+        return citations.Length > 0 ? citations : BuildDefaultCitations(page);
     }
+
+    private static IReadOnlyList<CitationDto> BuildDefaultCitations(WikipediaPage page) =>
+    [
+        new CitationDto(page.Title, page.SourceUrl, "Overview", null),
+        new CitationDto($"{page.Title} references", $"{page.SourceUrl}#references", "References", null),
+        new CitationDto($"{page.Title} related topics", $"{page.SourceUrl}#related-topics", "Related topics", null)
+    ];
 
     private static ChatHistory BuildChatHistory(
         string effectivePrompt,
@@ -143,6 +144,7 @@ public sealed class AISummarizer : IAISummarizer
             Mention chunk identifiers inline when helpful, but do not fabricate any identifiers beyond those provided.
             """);
 
+        // Preserve only the last few turns so the prompt stays small and the chat model sees the most recent thread state.
         foreach (var message in sessionHistory.TakeLast(6))
         {
             if (string.Equals(message.Role, "assistant", StringComparison.OrdinalIgnoreCase))

@@ -3,6 +3,9 @@ using WikiGraph.Contracts;
 
 namespace WikiGraph.Api.Application.Abstractions;
 
+/// <summary>
+/// Produces an answer from the page, session history, and retrieved context.
+/// </summary>
 public interface IAISummarizer
 {
     Task<GeneratedAnswer> GenerateAsync(
