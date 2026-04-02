@@ -13,6 +13,7 @@ publish/
 *.sln.docstates
 *.rsuser
 .codex
+.env
 
 # IDE settings
 .vscode/

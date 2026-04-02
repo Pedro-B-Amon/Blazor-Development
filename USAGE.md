@@ -1,182 +1,102 @@
 # WikiGraph Usage Guide
 
-## What this project contains
+## What Runs Where
 
-- `WikiGraph.Api`: ASP.NET Core REST API with SQLite persistence.
-- `WikiGraph.Client`: Blazor WebAssembly UI.
-- `WikiGraph.Web`: Additional Blazor UI shell in the repo, kept buildable alongside the WASM client.
-- `WikiGraph.Contracts`: Shared DTOs used by the API, UI, and tests.
+- `WikiGraph.Api`: ASP.NET Core API that owns sessions, Wikipedia lookup, Gemini replies, and SQLite persistence.
+- `WikiGraph.Client`: Blazor WebAssembly UI that shows sessions, chat messages, citations, and graphs.
+- `WikiGraph.Contracts`: Shared DTOs used by both projects.
 - `WikiGraph.Tests`: API and persistence tests.
 
-The API now follows a layered structure:
-
-- `Controllers`: REST endpoints
-- `Application/Services`: orchestrator, summarizer, graph builder, ingestion, retrieval
-- `Infrastructure/Persistence`: SQLite schema, repository, vector store
-- `Infrastructure/Wikipedia`: Wikipedia content boundary
-
-The WASM client is now split into:
-
-- `Components/ChatSidebar`
-- `Components/ChatThread`
-- `Components/MessageView`
-- `Components/CitationList`
-- `Components/GraphView`
-- `Services/ApiClient`
+The app is session-based. Each session stores the conversation history, the assistant reply, citations, and the current graph data.
 
 ## Prerequisites
 
 - .NET 10 SDK
-- SQLite is bundled through `Microsoft.Data.Sqlite`; no separate database server is required
-- Optional: an OpenAI API key if you want Semantic Kernel chat completion and semantic embeddings
+- No external database server is required
+- An optional Gemini API key if you want AI-generated replies and graph topics
 
 ## Configuration
 
-The app works in two modes:
+The API checks for configuration in this order:
 
-- With OpenAI configured: Semantic Kernel is used for chat completion and embeddings.
-- Without OpenAI configured: the backend falls back to deterministic local summarization and keyword-based retrieval.
+1. `appsettings.json`
+2. environment variables
+3. a local `.env` file found while starting the API
 
-Optional configuration:
-
-- `WikiGraph.Api/appsettings.json`
-- `WikiGraph.Api/appsettings.Development.json`
-
-The API uses the `ConnectionStrings:WikiGraph` value if provided. If omitted, it falls back to:
-
-```json
-Data Source=wikigraph.db
-```
-
-OpenAI configuration is read from the `OpenAI` section in `WikiGraph.Api/appsettings.json`, with environment-variable fallbacks for secrets:
+Recommended setup for local development:
 
 ```bash
-export OPENAI_API_KEY=your-key
-export OPENAI_ORG_ID=your-org-id   # optional
+GEMINI_API_KEY="your-key-here"
+Gemini__TextModel="gemini-2.5-flash"
+Gemini__EmbeddingModel="gemini-embedding-001"
 ```
+
+You can place that line in a `.env` file at the repo root or set the variable in your shell before launching the API.
+
+If the key is missing, the app still works, but it uses local fallback text instead of Gemini.
 
 ## Run the API
 
 From the repo root:
 
 ```bash
-dotnet run --project WikiGraph.Api/WikiGraph.Api.csproj
+dotnet run --project WikiGraph/WikiGraph.Api/WikiGraph.Api.csproj
 ```
 
-The API exposes:
+The API is available on the default ASP.NET Core development ports. The client expects the API at `http://localhost:5052` unless you change the client configuration.
+
+## Run the Client
+
+In a separate terminal:
+
+```bash
+dotnet run --project WikiGraph/WikiGraph.Client/WikiGraph.Client.csproj
+```
+
+The client lets you:
+
+- create and select sessions
+- submit a Wikipedia topic or URL
+- read the assistant answer
+- view citations
+- view topic graphs
+
+## API Endpoints
+
+The current endpoints are:
 
 - `GET /api/health`
 - `GET /api/sessions`
 - `POST /api/sessions`
 - `GET /api/sessions/{sessionId}`
 - `GET /api/sessions/{sessionId}/graphs`
-- `POST /api/query`
+- `POST /api/sessions/{sessionId}/articles`
 
-`POST /api/query` accepts either a topic prompt, a Wikipedia URL, or both.
+The `articles` endpoint is the main entry point for the UI. It stores the user input, resolves the Wikipedia page, asks Gemini for the answer, and returns the updated session.
 
-## Run the Blazor WebAssembly UI
+## Testing
 
-The WASM client lives in `WikiGraph.Client`.
-
-```bash
-dotnet run --project WikiGraph.Client/WikiGraph.Client.csproj
-```
-
-The client expects the API to be reachable at:
-
-```text
-http://localhost:5052
-```
-
-If you want to use a different API host or port, update:
-
-- `WikiGraph.Client/wwwroot/appsettings.json`
-- `WikiGraph.Client/Program.cs`
-
-The chat form supports:
-
-- topic prompts
-- Wikipedia URLs
-- combined prompt + URL submissions
-
-## Run the server-rendered web shell
-
-The repository also includes `WikiGraph.Web`, which renders the same study-guide layout on the server side.
+Run the full solution tests with:
 
 ```bash
-dotnet run --project WikiGraph.Web/WikiGraph.Web.csproj
-```
-
-## Test the API and persistence
-
-Build and run the test project:
-
-```bash
-dotnet test WikiGraph.Tests/WikiGraph.Tests.csproj
+dotnet test WikiGraph/WikiGraph.slnx -m:1 -p:UseSharedCompilation=false
 ```
 
 The tests cover:
 
-- SQLite-backed session persistence
-- API query endpoint behavior
+- session creation
+- article submission
+- graph retrieval
+- SQLite persistence
 
-## Generate UML artifacts
+## Local Data
 
-The implementation diagrams in `README.md` are extracted automatically when the API project builds.
+SQLite stores data in `wikigraph.db` in the API working directory.
 
-Manual generation:
+Delete that file if you want to reset the app.
 
-```bash
-bash scripts/generate-uml.sh README.md docs/uml
-```
+## Notes
 
-Generated files:
-
-- `docs/uml/*.puml`
-- `docs/uml/README.md`
-
-If `plantuml` is installed, or `PLANTUML_JAR` points to a PlantUML jar, SVG files are rendered automatically too.
-
-## Validate endpoints manually
-
-You can use the included HTTP file:
-
-- `WikiGraph.Api/WikiGraph.Api.http`
-
-Or call the API directly:
-
-```bash
-curl http://localhost:5052/api/health
-curl http://localhost:5052/api/sessions
-```
-
-Example query:
-
-```bash
-curl -X POST http://localhost:5052/api/query \
-  -H "Content-Type: application/json" \
-  -d '{"sessionId":"demo","prompt":"Climate adaptation","sourceUrl":null}'
-```
-
-Example URL-driven query:
-
-```bash
-curl -X POST http://localhost:5052/api/query \
-  -H "Content-Type: application/json" \
-  -d '{"sessionId":"demo","prompt":"","sourceUrl":"https://en.wikipedia.org/wiki/Climate_change_adaptation"}'
-```
-
-## Data location
-
-By default, SQLite creates:
-
-- `wikigraph.db` in the API working directory
-
-Delete that file if you want to reset local sessions and graphs.
-
-## Notes on current behavior
-
-- The browser UI shows sessions, thread history, citations, and one or more topic graphs.
-- The API persists all session content to SQLite.
-- Citations include chunk identifiers so responses stay linked to retrieved context.
-- OpenAI credentials are optional; without them the app still runs using deterministic local fallbacks.
+- Restart the API after changing `.env`, because the file is loaded at startup.
+- The UI can load graphs either through the full session payload or through the dedicated graphs endpoint.
+- With `GEMINI_API_KEY` configured, Semantic Kernel uses Gemini for both chat replies and embeddings while SQLite still stores the sessions, citations, and retrieved chunks.

@@ -128,10 +128,11 @@
             var sessionId = await EnsureSelectedSessionAsync();
             var normalizedPrompt = prompt.Trim();
             var normalizedUrl = sourceUrl.Trim();
-            var payload = await ApiClient.SubmitQueryAsync(new QueryRequest(
+            var payload = await ApiClient.AddArticleAsync(
                 sessionId,
-                normalizedPrompt,
-                string.IsNullOrWhiteSpace(normalizedUrl) ? null : normalizedUrl));
+                new AddWikiArticleRequest(
+                    normalizedPrompt,
+                    string.IsNullOrWhiteSpace(normalizedUrl) ? null : normalizedUrl));
 
             if (payload is null)
             {
@@ -141,8 +142,8 @@
             prompt = string.Empty;
             sourceUrl = string.Empty;
 
+            ReplaceSessionArtifacts(payload);
             await LoadSessions();
-            await LoadSession(sessionId);
         });
     }
 

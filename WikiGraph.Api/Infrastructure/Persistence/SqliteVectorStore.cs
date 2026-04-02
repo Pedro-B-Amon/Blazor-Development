@@ -1,58 +1,54 @@
 using System.Text;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
-using Microsoft.Extensions.AI;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
-using WikiGraph.Api.Configuration;
 using WikiGraph.Api.Application.Models;
+using WikiGraph.Api.Application.Services;
 
 namespace WikiGraph.Api.Infrastructure.Persistence;
 
-public sealed class SqliteVectorStore : IVectorStore
+public sealed class SqliteVectorStore
 {
     private const string KeywordEncodingKind = "keyword-json";
-    private const string VectorEncodingKind = "float32-json";
+    private const string GeminiEncodingKind = "gemini-float32-json";
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly ISqliteConnectionFactory _connectionFactory;
-    private readonly IEmbeddingGenerator<string, Embedding<float>>? _embeddingGenerationService;
-    private readonly OpenAIOptions _options;
+    private readonly GeminiService _geminiService;
     private readonly ILogger<SqliteVectorStore> _logger;
 
     public SqliteVectorStore(
         ISqliteConnectionFactory connectionFactory,
         SessionMemoryDb _,
-        IServiceProvider serviceProvider,
-        IOptions<OpenAIOptions> options,
+        GeminiService geminiService,
         ILogger<SqliteVectorStore> logger)
     {
         _connectionFactory = connectionFactory;
-        _embeddingGenerationService = serviceProvider.GetService<IEmbeddingGenerator<string, Embedding<float>>>();
-        _options = options.Value;
+        _geminiService = geminiService;
         _logger = logger;
     }
 
-    public async Task UpsertAsync(string sessionId, WikipediaPage page, IReadOnlyList<WikipediaChunk> chunks, CancellationToken cancellationToken = default)
+    public async Task UpsertArticleAsync(string sessionId, WikiArticle article, CancellationToken cancellationToken = default)
     {
         using var connection = _connectionFactory.OpenConnection();
         using var transaction = connection.BeginTransaction();
 
-        var storedPageId = BuildStoredPageId(sessionId, page.PageId);
-        DeletePageArtifacts(connection, storedPageId, transaction);
-        InsertPage(connection, sessionId, storedPageId, page, transaction);
-        foreach (var chunk in chunks)
+        var storedArticleId = $"{sessionId}:{article.ArticleId}";
+        DeleteStoredArticle(connection, storedArticleId, transaction);
+        InsertArticle(connection, sessionId, storedArticleId, article, transaction);
+
+        foreach (var item in article.Sections
+            .Where(section => !string.IsNullOrWhiteSpace(section.Content))
+            .Select((section, index) => new { section, index }))
         {
-            var storedChunkId = BuildStoredChunkId(sessionId, chunk.ChunkId);
-            InsertChunk(connection, storedPageId, storedChunkId, chunk, transaction);
-            var embedding = await CreateEmbeddingAsync(chunk, cancellationToken);
-            InsertEmbedding(connection, storedChunkId, embedding, transaction);
+            var sectionText = $"{article.Title}: {item.section.Content}";
+            var chunkId = BuildChunkId(storedArticleId, item.section, item.index, sectionText);
+            InsertSection(connection, storedArticleId, chunkId, item.section, sectionText, transaction);
+            await InsertEmbeddingAsync(connection, chunkId, sectionText, cancellationToken, transaction);
         }
 
         transaction.Commit();
     }
 
-    public async Task<IReadOnlyList<RetrievedContext>> SearchAsync(string sessionId, string prompt, int count, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<WikiMatch>> SearchAsync(string sessionId, string text, int count, CancellationToken cancellationToken = default)
     {
         using var connection = _connectionFactory.OpenConnection();
         using var command = connection.CreateCommand();
@@ -65,17 +61,22 @@ public sealed class SqliteVectorStore : IVectorStore
             """;
         command.Parameters.AddWithValue("$sessionId", sessionId);
 
-        var promptTerms = TextTokenizer.ExtractTerms(prompt).ToHashSet(StringComparer.Ordinal);
-        var promptEmbedding = await CreatePromptEmbeddingAsync(prompt, cancellationToken);
+        var queryTerms = TextTools.ExtractTerms(text).ToHashSet(StringComparer.Ordinal);
+        var queryVector = await _geminiService.CreateEmbeddingAsync(text, cancellationToken);
         using var reader = command.ExecuteReader();
-        var results = new List<RetrievedContext>();
+        var matches = new List<WikiMatch>();
+
         while (reader.Read())
         {
+            var payload = (byte[])reader["Embedding"];
             var encodingKind = reader.IsDBNull(5) ? KeywordEncodingKind : reader.GetString(5);
-            var score = ScoreCandidate((byte[])reader["Embedding"], encodingKind, promptTerms, promptEmbedding)
-                + (reader.GetString(1).Equals("Overview", StringComparison.OrdinalIgnoreCase) ? 0.25 : 0d);
+            var score = Score(payload, encodingKind, queryTerms, queryVector);
+            if (reader.GetString(1).Equals("Overview", StringComparison.OrdinalIgnoreCase))
+            {
+                score += 0.25d;
+            }
 
-            results.Add(new RetrievedContext(
+            matches.Add(new WikiMatch(
                 reader.GetString(0),
                 reader.GetString(1),
                 reader.GetString(2),
@@ -83,53 +84,41 @@ public sealed class SqliteVectorStore : IVectorStore
                 score));
         }
 
-        return results
-            .OrderByDescending(item => item.Score)
-            .ThenBy(item => item.Section, StringComparer.OrdinalIgnoreCase)
+        return matches
+            .OrderByDescending(match => match.Score)
+            .ThenBy(match => match.Section, StringComparer.OrdinalIgnoreCase)
             .Take(count)
             .ToArray();
     }
 
-    private async Task<StoredEmbedding> CreateEmbeddingAsync(WikipediaChunk chunk, CancellationToken cancellationToken)
+    private async Task InsertEmbeddingAsync(
+        SqliteConnection connection,
+        string chunkId,
+        string sectionText,
+        CancellationToken cancellationToken,
+        SqliteTransaction transaction)
     {
-        if (_embeddingGenerationService is null || !_options.IsEnabled)
-        {
-            return BuildKeywordEmbedding(chunk.Terms);
-        }
+        var vector = await _geminiService.CreateEmbeddingAsync(sectionText, cancellationToken);
+        var encodingKind = vector is null ? KeywordEncodingKind : GeminiEncodingKind;
+        var payload = vector is null
+            ? Encoding.UTF8.GetBytes(JsonSerializer.Serialize(TextTools.ExtractTerms(sectionText), JsonOptions))
+            : Encoding.UTF8.GetBytes(JsonSerializer.Serialize(vector, JsonOptions));
 
-        try
-        {
-            var embedding = await _embeddingGenerationService.GenerateVectorAsync(chunk.Text, cancellationToken: cancellationToken);
-            var values = embedding.ToArray();
-            return new StoredEmbedding(VectorEncodingKind, _options.EmbeddingModelId, values.Length, EncodeVector(values));
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "OpenAI embedding generation failed for chunk {ChunkId}; using keyword retrieval fallback.", chunk.ChunkId);
-            return BuildKeywordEmbedding(chunk.Terms);
-        }
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            INSERT INTO ChunkEmbeddings (ChunkId, Embedding, EncodingKind, ModelId, Dimensions)
+            VALUES ($chunkId, $embedding, $encodingKind, $modelId, $dimensions);
+            """;
+        command.Parameters.AddWithValue("$chunkId", chunkId);
+        command.Parameters.AddWithValue("$embedding", payload);
+        command.Parameters.AddWithValue("$encodingKind", encodingKind);
+        command.Parameters.AddWithValue("$modelId", vector is null ? "keyword-overlap-v1" : "gemini");
+        command.Parameters.AddWithValue("$dimensions", vector?.Length is int length ? length : DBNull.Value);
+        command.ExecuteNonQuery();
     }
 
-    private async Task<float[]?> CreatePromptEmbeddingAsync(string prompt, CancellationToken cancellationToken)
-    {
-        if (_embeddingGenerationService is null || !_options.IsEnabled || string.IsNullOrWhiteSpace(prompt))
-        {
-            return null;
-        }
-
-        try
-        {
-            var embedding = await _embeddingGenerationService.GenerateVectorAsync(prompt, cancellationToken: cancellationToken);
-            return embedding.ToArray();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "OpenAI embedding generation failed for the retrieval prompt; using keyword overlap.");
-            return null;
-        }
-    }
-
-    private static void DeletePageArtifacts(SqliteConnection connection, string pageId, SqliteTransaction transaction)
+    private static void DeleteStoredArticle(SqliteConnection connection, string articleId, SqliteTransaction transaction)
     {
         using var deleteEmbeddings = connection.CreateCommand();
         deleteEmbeddings.Transaction = transaction;
@@ -141,23 +130,23 @@ public sealed class SqliteVectorStore : IVectorStore
                 WHERE PageId = $pageId
             );
             """;
-        deleteEmbeddings.Parameters.AddWithValue("$pageId", pageId);
+        deleteEmbeddings.Parameters.AddWithValue("$pageId", articleId);
         deleteEmbeddings.ExecuteNonQuery();
 
         using var deleteChunks = connection.CreateCommand();
         deleteChunks.Transaction = transaction;
         deleteChunks.CommandText = "DELETE FROM DocumentChunks WHERE PageId = $pageId;";
-        deleteChunks.Parameters.AddWithValue("$pageId", pageId);
+        deleteChunks.Parameters.AddWithValue("$pageId", articleId);
         deleteChunks.ExecuteNonQuery();
 
-        using var deletePage = connection.CreateCommand();
-        deletePage.Transaction = transaction;
-        deletePage.CommandText = "DELETE FROM WikipediaPages WHERE PageId = $pageId;";
-        deletePage.Parameters.AddWithValue("$pageId", pageId);
-        deletePage.ExecuteNonQuery();
+        using var deleteArticle = connection.CreateCommand();
+        deleteArticle.Transaction = transaction;
+        deleteArticle.CommandText = "DELETE FROM WikipediaPages WHERE PageId = $pageId;";
+        deleteArticle.Parameters.AddWithValue("$pageId", articleId);
+        deleteArticle.ExecuteNonQuery();
     }
 
-    private static void InsertPage(SqliteConnection connection, string sessionId, string storedPageId, WikipediaPage page, SqliteTransaction transaction)
+    private static void InsertArticle(SqliteConnection connection, string sessionId, string articleId, WikiArticle article, SqliteTransaction transaction)
     {
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
@@ -165,15 +154,21 @@ public sealed class SqliteVectorStore : IVectorStore
             INSERT INTO WikipediaPages (PageId, SessionId, Title, SourceUrl, RetrievedUtc)
             VALUES ($pageId, $sessionId, $title, $sourceUrl, $retrievedUtc);
             """;
-        command.Parameters.AddWithValue("$pageId", storedPageId);
+        command.Parameters.AddWithValue("$pageId", articleId);
         command.Parameters.AddWithValue("$sessionId", sessionId);
-        command.Parameters.AddWithValue("$title", page.Title);
-        command.Parameters.AddWithValue("$sourceUrl", page.SourceUrl);
-        command.Parameters.AddWithValue("$retrievedUtc", page.RetrievedUtc.ToString("O"));
+        command.Parameters.AddWithValue("$title", article.Title);
+        command.Parameters.AddWithValue("$sourceUrl", article.SourceUrl);
+        command.Parameters.AddWithValue("$retrievedUtc", article.RetrievedUtc.ToString("O"));
         command.ExecuteNonQuery();
     }
 
-    private static void InsertChunk(SqliteConnection connection, string storedPageId, string storedChunkId, WikipediaChunk chunk, SqliteTransaction transaction)
+    private static void InsertSection(
+        SqliteConnection connection,
+        string articleId,
+        string chunkId,
+        WikiSection section,
+        string text,
+        SqliteTransaction transaction)
     {
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
@@ -181,58 +176,40 @@ public sealed class SqliteVectorStore : IVectorStore
             INSERT INTO DocumentChunks (ChunkId, PageId, Section, Text, Hash)
             VALUES ($chunkId, $pageId, $section, $text, $hash);
             """;
-        command.Parameters.AddWithValue("$chunkId", storedChunkId);
-        command.Parameters.AddWithValue("$pageId", storedPageId);
-        command.Parameters.AddWithValue("$section", chunk.Section);
-        command.Parameters.AddWithValue("$text", chunk.Text);
-        command.Parameters.AddWithValue("$hash", chunk.Hash);
-        command.ExecuteNonQuery();
-    }
-
-    private static void InsertEmbedding(SqliteConnection connection, string chunkId, StoredEmbedding embedding, SqliteTransaction transaction)
-    {
-        using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = """
-            INSERT INTO ChunkEmbeddings (ChunkId, Embedding, EncodingKind, ModelId, Dimensions)
-            VALUES ($chunkId, $embedding, $encodingKind, $modelId, $dimensions);
-            """;
         command.Parameters.AddWithValue("$chunkId", chunkId);
-        command.Parameters.AddWithValue("$embedding", embedding.Payload);
-        command.Parameters.AddWithValue("$encodingKind", embedding.EncodingKind);
-        command.Parameters.AddWithValue("$modelId", (object?)embedding.ModelId ?? DBNull.Value);
-        command.Parameters.AddWithValue("$dimensions", (object?)embedding.Dimensions ?? DBNull.Value);
+        command.Parameters.AddWithValue("$pageId", articleId);
+        command.Parameters.AddWithValue("$section", section.Heading);
+        command.Parameters.AddWithValue("$text", text);
+        command.Parameters.AddWithValue("$hash", TextTools.Hash(text));
         command.ExecuteNonQuery();
     }
 
-    private static StoredEmbedding BuildKeywordEmbedding(IReadOnlyList<string> terms) =>
-        new(KeywordEncodingKind, "keyword-overlap-v1", terms.Count, EncodeTerms(terms));
-
-    private static byte[] EncodeTerms(IReadOnlyList<string> terms) =>
-        Encoding.UTF8.GetBytes(JsonSerializer.Serialize(terms, JsonOptions));
-
-    private static IReadOnlyList<string> DecodeTerms(byte[] payload) =>
-        JsonSerializer.Deserialize<string[]>(Encoding.UTF8.GetString(payload), JsonOptions) ?? [];
-
-    private static byte[] EncodeVector(IReadOnlyList<float> vector) =>
-        Encoding.UTF8.GetBytes(JsonSerializer.Serialize(vector, JsonOptions));
-
-    private static float[] DecodeVector(byte[] payload) =>
-        JsonSerializer.Deserialize<float[]>(Encoding.UTF8.GetString(payload), JsonOptions) ?? [];
-
-    private static double ScoreCandidate(
-        byte[] payload,
-        string encodingKind,
-        IReadOnlySet<string> promptTerms,
-        float[]? promptEmbedding)
+    private static string BuildChunkId(string articleId, WikiSection section, int index, string text)
     {
-        if (string.Equals(encodingKind, VectorEncodingKind, StringComparison.OrdinalIgnoreCase) && promptEmbedding is not null)
-        {
-            return CosineSimilarity(promptEmbedding, DecodeVector(payload));
-        }
+        // Section headings can repeat (for example "Key Point"), so include the position and a short content hash.
+        var headingSlug = TextTools.Slugify(section.Heading);
+        var hash = TextTools.Hash(text)[..8].ToLowerInvariant();
+        return $"{articleId}:{index + 1:D2}:{headingSlug}:{hash}";
+    }
 
-        var terms = DecodeTerms(payload);
-        return promptTerms.Count == 0 ? 0d : terms.Count(promptTerms.Contains);
+    private double Score(byte[] payload, string encodingKind, IReadOnlySet<string> queryTerms, float[]? queryVector)
+    {
+        try
+        {
+            if (string.Equals(encodingKind, GeminiEncodingKind, StringComparison.OrdinalIgnoreCase) && queryVector is not null)
+            {
+                var storedVector = JsonSerializer.Deserialize<float[]>(Encoding.UTF8.GetString(payload), JsonOptions) ?? [];
+                return CosineSimilarity(queryVector, storedVector);
+            }
+
+            var storedTerms = JsonSerializer.Deserialize<string[]>(Encoding.UTF8.GetString(payload), JsonOptions) ?? [];
+            return queryTerms.Count == 0 ? 0d : storedTerms.Count(queryTerms.Contains);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Stored embedding payload could not be scored.");
+            return 0d;
+        }
     }
 
     private static double CosineSimilarity(IReadOnlyList<float> left, IReadOnlyList<float> right)
@@ -243,26 +220,22 @@ public sealed class SqliteVectorStore : IVectorStore
             return 0d;
         }
 
-        double dot = 0;
-        double leftMagnitude = 0;
-        double rightMagnitude = 0;
+        double dot = 0d;
+        double leftSize = 0d;
+        double rightSize = 0d;
 
         for (var index = 0; index < length; index++)
         {
             dot += left[index] * right[index];
-            leftMagnitude += left[index] * left[index];
-            rightMagnitude += right[index] * right[index];
+            leftSize += left[index] * left[index];
+            rightSize += right[index] * right[index];
         }
 
-        if (leftMagnitude == 0 || rightMagnitude == 0)
+        if (leftSize == 0d || rightSize == 0d)
         {
             return 0d;
         }
 
-        return dot / (Math.Sqrt(leftMagnitude) * Math.Sqrt(rightMagnitude));
+        return dot / (Math.Sqrt(leftSize) * Math.Sqrt(rightSize));
     }
-
-    private static string BuildStoredPageId(string sessionId, string pageId) => $"{sessionId}:{pageId}";
-
-    private static string BuildStoredChunkId(string sessionId, string chunkId) => $"{sessionId}:{chunkId}";
 }

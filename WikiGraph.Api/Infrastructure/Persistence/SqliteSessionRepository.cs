@@ -1,15 +1,11 @@
 using System.Globalization;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
-using WikiGraph.Api.Application.Models;
 using WikiGraph.Contracts;
 
 namespace WikiGraph.Api.Infrastructure.Persistence;
 
-/// <summary>
-/// Stores sessions, messages, citations, and graphs in SQLite using one local database file.
-/// </summary>
-public sealed class SqliteSessionRepository : ISessionRepository
+public sealed class SqliteSessionRepository
 {
     private const string DefaultSessionTitle = "New session";
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
@@ -17,7 +13,6 @@ public sealed class SqliteSessionRepository : ISessionRepository
 
     public SqliteSessionRepository(ISqliteConnectionFactory connectionFactory, SessionMemoryDb _)
     {
-        // SessionMemoryDb is injected for its schema/bootstrap side effects.
         _connectionFactory = connectionFactory;
     }
 
@@ -94,45 +89,47 @@ public sealed class SqliteSessionRepository : ISessionRepository
         return LoadSession(connection, sessionId) is null ? null : LoadGraphs(connection, sessionId);
     }
 
-    public void SaveQueryArtifacts(QueryArtifacts artifacts)
+    public void SaveTurn(
+        string sessionId,
+        string sessionTitle,
+        MessageDto userMessage,
+        MessageDto assistantMessage,
+        IReadOnlyList<CitationDto> citations,
+        IReadOnlyList<GraphDto> graphs)
     {
         using var connection = _connectionFactory.OpenConnection();
         using var transaction = connection.BeginTransaction();
 
-        var existingSession = LoadSession(connection, artifacts.SessionId);
-        var accessedUtc = artifacts.AssistantMessage.CreatedUtc;
+        var existingSession = LoadSession(connection, sessionId);
         if (existingSession is null)
         {
             InsertSession(
                 connection,
-                new SessionSummary(artifacts.SessionId, artifacts.SessionTitle, artifacts.UserMessage.CreatedUtc, accessedUtc),
+                new SessionSummary(sessionId, sessionTitle, userMessage.CreatedUtc, assistantMessage.CreatedUtc),
                 SessionMemoryDb.DefaultUserId,
                 transaction);
         }
         else
         {
-            UpdateSession(connection, artifacts.SessionId, ResolveSessionTitle(existingSession.Title, artifacts.SessionTitle), accessedUtc, transaction);
+            UpdateSession(connection, sessionId, ResolveSessionTitle(existingSession.Title, sessionTitle), assistantMessage.CreatedUtc, transaction);
         }
 
-        InsertMessage(connection, artifacts.SessionId, artifacts.UserMessage, transaction);
-        var assistantMessageId = InsertMessage(connection, artifacts.SessionId, artifacts.AssistantMessage, transaction);
+        InsertMessage(connection, sessionId, userMessage, transaction);
+        var assistantMessageId = InsertMessage(connection, sessionId, assistantMessage, transaction);
 
-        foreach (var citation in artifacts.Citations)
+        foreach (var citation in citations)
         {
-            InsertCitation(connection, artifacts.SessionId, assistantMessageId, citation, transaction);
+            InsertCitation(connection, sessionId, assistantMessageId, citation, transaction);
         }
 
-        foreach (var graph in artifacts.Graphs)
+        foreach (var graph in graphs)
         {
-            InsertGraph(connection, artifacts.SessionId, graph, transaction);
+            InsertGraph(connection, sessionId, graph, transaction);
         }
 
         transaction.Commit();
     }
 
-    /// <summary>
-    /// Keeps the original title unless the session still has the default placeholder title.
-    /// </summary>
     private static string ResolveSessionTitle(string currentTitle, string requestedTitle) =>
         string.Equals(currentTitle, DefaultSessionTitle, StringComparison.OrdinalIgnoreCase)
             ? requestedTitle
