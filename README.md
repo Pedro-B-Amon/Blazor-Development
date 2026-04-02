@@ -1,12 +1,14 @@
 # Implementation Outline — Wikipedia RAG Chat, Study Guide, and Topic Graphs
 
+For build, run, API, UI hosting, and test instructions, see [USAGE.md](./USAGE.md).
+
 ## 1) Goal and scope
 
 This project reduces time spent researching by accepting a Wikipedia topic or article link and using an LLM to summarize and organize Wikipedia-based information into outputs that support early-stage project and paper development. The system prioritizes fast scope expansion and reference gathering rather than replacing deeper investigation. :contentReference[oaicite:0]{index=0}
 
 ## 2) System architecture overview
 
-The system is implemented as a web application with a strict separation between the browser UI and server-side services. The client is a Blazor WebAssembly `UserInterface` composed of Razor components that render content and capture input, while all retrieval, summarization, graph building, and persistence run behind an ASP.NET Core REST API. The UI communicates with the API over HTTPS using JSON request/response DTOs so the client only depends on stable contracts rather than internal entities. Wikipedia data is obtained through the official MediaWiki/Wikimedia API using `System.Net.Http` and a dedicated client such as `Wikipedia_API_Client`. Natural-language reasoning is orchestrated via Microsoft Semantic Kernel with a retrieval-augmented generation (RAG) workflow, coordinated by services such as `AI_Summarizer` and `Query_Orchestrator`. Session memory and retrieval artifacts are stored in SQLite through an ORM/repository boundary such as `SessionMemory_DB` and `Sqlite_Session_Repository`. :contentReference[oaicite:1]{index=1}
+The system is implemented as a web application with a strict separation between the browser UI and server-side services. The client is a Blazor WebAssembly `UserInterface` composed of Razor components that render content and capture input, while retrieval, summarization, graph building, and persistence run behind an ASP.NET Core REST API. The UI communicates with the API over HTTP/JSON using shared DTO contracts so the client only depends on stable request/response models rather than internal entities. The API is now organized into controllers, application services, and infrastructure boundaries: `QueryController` and `SessionController` sit at the edge; `QueryOrchestrator` coordinates the RAG-style workflow; `WikipediaApiClient`, `SqliteSessionRepository`, and `SqliteVectorStore` live behind interfaces for future external integrations. The current implementation supports Semantic Kernel / OpenAI chat completion and embedding generation when configured, while preserving deterministic local fallbacks for summarization and retrieval when API credentials are absent. :contentReference[oaicite:1]{index=1}
 
 ## 3) User interface (Blazor WASM)
 
@@ -41,21 +43,21 @@ Controllers follow the proposal’s style (e.g., `QueryController`, `SessionCont
 
 ## 5) RAG workflow and Semantic Kernel integration
 
-The RAG workflow is coordinated by `Query_Orchestrator` and executed through Semantic Kernel via a service such as `AI_Summarizer`. For each user query:
+The RAG-style workflow is coordinated by `QueryOrchestrator` and shaped by `AISummarizer`. For each user query:
 
 1. **Load session state:** retrieve the session and message history from SQLite.
-2. **Resolve and retrieve Wikipedia content:** call the MediaWiki/Wikimedia API through `Wikipedia_API_Client` to obtain page content and metadata needed for citations.
-3. **Normalize and chunk:** segment Wikipedia content into chunks suitable for retrieval; store stable identifiers and source references.
-4. **Upsert retrieval memory:** generate embeddings for new chunks and store them in the SQLite-backed vector store.
-5. **Retrieve relevant context:** perform semantic similarity search to select top-k chunks for the query.
-6. **Generate grounded outputs:** invoke Semantic Kernel with the retrieved context to produce:
+2. **Resolve Wikipedia content:** call `WikipediaApiClient` to normalize the prompt or URL into a canonical page plus structured sections.
+3. **Normalize and chunk:** `WikipediaIngestionService` segments the page into deterministic chunks suitable for retrieval and stores stable identifiers and hashes.
+4. **Upsert retrieval memory:** `SqliteVectorStore` stores chunks plus either semantic embeddings or deterministic keyword encodings in SQLite, along with embedding model metadata.
+5. **Retrieve relevant context:** `RagRetrievalService` performs local similarity scoring to select top-k chunks for the query.
+6. **Generate grounded outputs:** `AISummarizer` and `GraphBuilderService` produce:
    - study-guide text,
-   - citations (Wikipedia URLs and chunk identifiers), and
+   - citations (Wikipedia URLs plus chunk identifiers), and
    - one or more topic graphs (nodes/edges) centered on the user’s topic prompt and derived core topics.
-7. **Persist outputs:** append new messages, citations, and graph artifacts to SQLite.
+7. **Persist outputs:** append new messages, citations, graphs, and retrieval memory to SQLite.
 8. **Return JSON payload:** send `QueryResponse` to the UI containing text + citations + graph data.
 
-This keeps Wikipedia retrieval, memory search, and response generation modular (plugin/function style), while the orchestrator enforces ordering, persistence, and response shaping. :contentReference[oaicite:3]{index=3}
+This keeps Wikipedia retrieval, memory search, and response generation modular, while the orchestrator enforces ordering, persistence, and response shaping. :contentReference[oaicite:3]{index=3}
 
 ## 6) Data storage and retrieval (SQLite)
 
@@ -64,7 +66,7 @@ All user data is stored in SQLite for reliable retrieval. The SQLite database is
 - **Sessions / chats:** session identifiers, titles/topics, created/last-access timestamps
 - **Messages:** role (user/assistant), content, timestamps, ordering
 - **Wikipedia artifacts:** page identifiers, source URLs, chunk metadata, hashes for deduplication
-- **Vector memory:** embeddings and embedding model metadata (stored as BLOB/JSON)
+- **Vector memory:** embeddings or keyword encodings and embedding model metadata (stored as BLOB/JSON)
 - **Citations:** links between assistant responses and the Wikipedia sources/chunks used
 - **Graphs:** graph definitions keyed by session and core topic; node and edge records
 
@@ -79,35 +81,45 @@ Persistence is accessed through a boundary such as `SessionMemory_DB` and implem
 - `ApiClient` (typed HTTP wrapper for REST endpoints)
 
 ### API layer
-- `QueryController`, `SessionController`
-- DTOs: `QueryRequest`, `QueryResponse`, `SessionResponse`, `GraphResponse`
+- `QueryController`, `SessionController`, `HealthController`
+- DTOs: `QueryRequest`, `QueryResponse`, `SessionDetailDto`, `GraphDto`
 
 ### Application services
-- `Query_Orchestrator` (workflow coordinator)
-- `AI_Summarizer` (Semantic Kernel invocation + output shaping)
+- `QueryOrchestrator` (workflow coordinator)
+- `AISummarizer` (output shaping)
 - `WikipediaIngestionService` (normalize + chunk + citation mapping)
 - `RagRetrievalService` (top-k retrieval)
 - `GraphBuilderService` (construct graphs from extracted core topics and Wikipedia relationships)
 
 ### Infrastructure and persistence
-- `Wikipedia_API_Client` (MediaWiki/Wikimedia API client)
-- `SessionMemory_DB` (persistence boundary)
-- `Sqlite_Session_Repository` (sessions/messages/citations/graphs)
-- `Sqlite_VectorStore` (chunks/embeddings/similarity retrieval)
+- `WikipediaApiClient` (Wikipedia content resolver boundary)
+- `SessionMemoryDb` (persistence boundary / schema owner)
+- `SqliteSessionRepository` (sessions/messages/citations/graphs)
+- `SqliteVectorStore` (chunks/embeddings/similarity retrieval)
 
-Polymorphism is primarily supported through interfaces such as `IWikiClient`, `ISession_Repository`, `IVectorStore`, and `IRetrievalStrategy`, while inheritance is used where it matches the framework (e.g., controllers deriving from `ControllerBase`). :contentReference[oaicite:5]{index=5}
+Polymorphism is primarily supported through interfaces such as `IWikiClient`, `ISessionRepository`, `IVectorStore`, `IRagRetrievalService`, and `IWikipediaIngestionService`, while inheritance is used where it matches the framework (e.g., controllers deriving from `ControllerBase`). Semantic Kernel services are injected behind these boundaries so the same orchestration flow can operate with OpenAI-backed or deterministic local behavior. :contentReference[oaicite:5]{index=5}
+
+### Implemented folder structure
+- `WikiGraph.Api/Controllers` contains the REST edge (`QueryController`, `SessionController`, `HealthController`).
+- `WikiGraph.Api/Application/Abstractions` defines orchestration/service contracts.
+- `WikiGraph.Api/Application/Services` contains the RAG pipeline, including Semantic Kernel-backed summarization and embedding fallbacks.
+- `WikiGraph.Api/Application/Models` contains internal workflow records (`WikipediaPage`, `WikipediaChunk`, `RetrievedContext`, `QueryArtifacts`).
+- `WikiGraph.Api/Infrastructure/Persistence` owns SQLite schema, repositories, and vector memory.
+- `WikiGraph.Api/Infrastructure/Wikipedia` contains the Wikipedia content boundary.
+- `WikiGraph.Client/Components` contains `ChatSidebar`, `ChatThread`, `MessageView`, `CitationList`, and `GraphView`.
+- `WikiGraph.Client/Services/ApiClient.cs` is the typed browser-side HTTP client.
 
 ---
 
 # Automatic UML diagram generation (TreeUML / PlantUML workflow)
 
-The following UML blocks are written in a PlantUML-compatible “TreeUML” style so diagrams can be generated automatically from this Markdown:
+The UML source-of-truth stays in this Markdown file, and the repository now includes an automatic extractor:
 
-- **Editor-based generation:** use a PlantUML/TreeUML extension in your editor (commonly available in VS Code and JetBrains IDEs) to render diagrams directly from fenced `plantuml` blocks.
-- **Markdown preview rendering:** use a Markdown preview extension that recognizes PlantUML blocks and renders them inline.
-- **CI-based rendering:** configure a documentation pipeline (or a build step) that converts PlantUML blocks into SVG/PNG artifacts and links them into rendered documentation.
+- `scripts/generate-uml.sh README.md docs/uml` extracts each fenced `plantuml` block into `docs/uml/*.puml`.
+- `dotnet build WikiGraph.Api/WikiGraph.Api.csproj` runs that script automatically through `Directory.Build.targets`.
+- If the `plantuml` CLI is installed, or `PLANTUML_JAR` points at a PlantUML jar, the same script also renders SVG files beside the generated `.puml` sources.
 
-Recommended convention: keep diagrams in this single Markdown file and ensure each diagram block starts with `@startuml` and ends with `@enduml`.
+Generated artifacts are written to `docs/uml/`, with a small generated index at `docs/uml/README.md`.
 
 ---
 
@@ -123,18 +135,18 @@ actor User
 
 component "Blazor WASM UI\n(UserInterface)" as UI
 component "ASP.NET Core REST API" as API
-component "Query_Orchestrator" as ORCH
-component "AI_Summarizer\n(Semantic Kernel)" as SK
+component "QueryOrchestrator" as ORCH
+component "AISummarizer" as SK
 
-component "Wikipedia_API_Client" as WIKI
-database "SQLite\n(SessionMemory_DB)" as DB
+component "WikipediaApiClient\n(local resolver)" as WIKI
+database "SQLite\n(SessionMemoryDb)" as DB
 
 User --> UI
 UI --> API : HTTPS (JSON DTOs)
 API --> ORCH
-ORCH --> WIKI : MediaWiki/Wikimedia API
+ORCH --> WIKI : normalize prompt or URL
 ORCH --> DB : sessions/messages\nchunks/embeddings\ncitations/graphs
-ORCH --> SK : prompt + retrieved context
+ORCH --> SK : retrieved context
 SK --> ORCH : text + citations + graph(s)
 API --> UI : QueryResponse (JSON)
 
@@ -146,22 +158,19 @@ API --> UI : QueryResponse (JSON)
 actor User
 participant "Blazor WASM UI" as UI
 participant "QueryController" as QC
-participant "Query_Orchestrator" as QO
-participant "Wikipedia_API_Client" as WC
-participant "Sqlite_Session_Repository" as SR
-participant "Sqlite_VectorStore" as VS
-participant "AI_Summarizer\n(Semantic Kernel)" as SK
+participant "QueryOrchestrator" as QO
+participant "WikipediaApiClient" as WC
+participant "SqliteSessionRepository" as SR
+participant "SqliteVectorStore" as VS
+participant "AISummarizer" as SK
 
 User -> UI : Enter topic/question
 UI -> QC : POST /api/query\n(sessionId, text, optionalUrl)
-QC -> QO : HandleQuery(request)
-
-QO -> SR : LoadSession(sessionId)\n+ LoadHistory()
-QO -> WC : Retrieve Wikipedia content (API)
-QO -> VS : Upsert chunks + embeddings (if new)
+QC -> QO : Execute(request)
+QO -> WC : Resolve page
+QO -> VS : Upsert chunks + embeddings
 QO -> VS : Retrieve top-k relevant chunks
-QO -> SK : Generate text + citations + graph(s)\n(with retrieved context)
-
+QO -> SK : Generate study guide + citations
 SK --> QO : QueryResponse payload
 QO -> SR : Append messages\nPersist citations\nPersist graphs
 
@@ -179,31 +188,37 @@ skinparam classAttributeIconSize 0
 class QueryController
 class SessionController
 
-class Query_Orchestrator
-class AI_Summarizer
-class Wikipedia_API_Client
-class Sqlite_Session_Repository
-class Sqlite_VectorStore
+class QueryOrchestrator
+class AISummarizer
+class WikipediaApiClient
+class SqliteSessionRepository
+class SqliteVectorStore
+class WikipediaIngestionService
+class RagRetrievalService
 class GraphBuilderService
 
 interface IWikiClient
-interface ISession_Repository
+interface ISessionRepository
 interface IVectorStore
-interface IRetrievalStrategy
+interface IRagRetrievalService
+interface IWikipediaIngestionService
 
-IWikiClient <|.. Wikipedia_API_Client
-ISession_Repository <|.. Sqlite_Session_Repository
-IVectorStore <|.. Sqlite_VectorStore
+IWikiClient <|.. WikipediaApiClient
+ISessionRepository <|.. SqliteSessionRepository
+IVectorStore <|.. SqliteVectorStore
+IRagRetrievalService <|.. RagRetrievalService
+IWikipediaIngestionService <|.. WikipediaIngestionService
 
-QueryController --> Query_Orchestrator
-SessionController --> ISession_Repository
+QueryController --> QueryOrchestrator
+SessionController --> ISessionRepository
 
-Query_Orchestrator --> IWikiClient
-Query_Orchestrator --> ISession_Repository
-Query_Orchestrator --> IVectorStore
-Query_Orchestrator --> IRetrievalStrategy
-Query_Orchestrator --> AI_Summarizer
-Query_Orchestrator --> GraphBuilderService
+QueryOrchestrator --> IWikiClient
+QueryOrchestrator --> ISessionRepository
+QueryOrchestrator --> IVectorStore
+QueryOrchestrator --> IRagRetrievalService
+QueryOrchestrator --> IWikipediaIngestionService
+QueryOrchestrator --> AISummarizer
+QueryOrchestrator --> GraphBuilderService
 
 class QueryRequest
 class QueryResponse
@@ -241,6 +256,7 @@ class Messages <<table>> {
 
 class WikipediaPages <<table>> {
   PageId : TEXT (PK)
+  SessionId : TEXT (FK)
   Title : TEXT
   SourceUrl : TEXT
   RetrievedUtc : TEXT
@@ -249,6 +265,7 @@ class WikipediaPages <<table>> {
 class DocumentChunks <<table>> {
   ChunkId : TEXT (PK)
   PageId : TEXT (FK)
+  Section : TEXT
   Text : TEXT
   Hash : TEXT
 }
@@ -256,48 +273,31 @@ class DocumentChunks <<table>> {
 class ChunkEmbeddings <<table>> {
   ChunkId : TEXT (FK)
   Embedding : BLOB
-  Model : TEXT
-  CreatedUtc : TEXT
 }
 
 class Citations <<table>> {
   CitationId : TEXT (PK)
-  MessageId : TEXT (FK)
-  SourceUrl : TEXT
-  ChunkId : TEXT (FK)
+  SessionId : TEXT (FK)
+  Title : TEXT
+  Url : TEXT
+  Section : TEXT
 }
 
 class Graphs <<table>> {
   GraphId : TEXT (PK)
   SessionId : TEXT (FK)
-  CoreTopic : TEXT
-  CreatedUtc : TEXT
-}
-
-class GraphNodes <<table>> {
-  NodeId : TEXT (PK)
-  GraphId : TEXT (FK)
-  Label : TEXT
-  SourceUrl : TEXT
-}
-
-class GraphEdges <<table>> {
-  EdgeId : TEXT (PK)
-  GraphId : TEXT (FK)
-  FromNodeId : TEXT (FK)
-  ToNodeId : TEXT (FK)
-  EdgeType : TEXT
+  Topic : TEXT
+  NodesJson : TEXT
+  EdgesJson : TEXT
 }
 
 Users ||--o{ Sessions
 Sessions ||--o{ Messages
+Sessions ||--o{ WikipediaPages
 WikipediaPages ||--o{ DocumentChunks
 DocumentChunks ||--|| ChunkEmbeddings
-Messages ||--o{ Citations
-DocumentChunks ||--o{ Citations
+Sessions ||--o{ Citations
 Sessions ||--o{ Graphs
-Graphs ||--o{ GraphNodes
-Graphs ||--o{ GraphEdges
 
 @enduml
 ```

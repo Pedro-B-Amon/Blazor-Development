@@ -12,6 +12,7 @@ publish/
 *.userosscache
 *.sln.docstates
 *.rsuser
+.codex
 
 # IDE settings
 .vscode/

@@ -7,4 +7,8 @@
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\WikiGraph.Contracts\WikiGraph.Contracts.csproj" />
+  </ItemGroup>
+
 </Project>
