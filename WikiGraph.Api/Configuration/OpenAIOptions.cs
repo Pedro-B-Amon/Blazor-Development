@@ -1,5 +1,8 @@
 namespace WikiGraph.Api.Configuration;
 
+/// <summary>
+/// Configuration for the optional OpenAI-backed chat and embedding integrations.
+/// </summary>
 public sealed class OpenAIOptions
 {
     public string? ApiKey { get; set; }
