@@ -31,6 +31,8 @@ public sealed class WikiSessionService
     {
         var topic = TextTools.Clean(request.Topic);
         var wikipediaUrl = TextTools.Clean(request.WikipediaUrl);
+        // Get the session's messages if the session exists; otherwise, use an empty collection.
+        // Funky operators, huh, null conditional operator if not null -> messages + null coalesce operator (??) uses right value if null 
         var sessionHistory = _sessionRepository.GetSession(sessionId)?.Messages ?? [];
         var article = await _wikipediaService.GetArticleAsync(topic, wikipediaUrl, cancellationToken);
         var prompt = string.IsNullOrWhiteSpace(topic) ? article.Title : topic;
