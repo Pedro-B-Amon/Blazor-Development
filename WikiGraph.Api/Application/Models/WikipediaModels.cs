@@ -1,52 +1,74 @@
-using System.Globalization;
-using System.Text.RegularExpressions;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace WikiGraph.Api.Application.Models;
 
-/// <summary>
-/// A single section extracted from a Wikipedia page.
-/// </summary>
-public sealed record WikipediaSection(string Heading, string Content);
+public sealed record WikiSection(string Heading, string Content);
 
-/// <summary>
-/// Canonical Wikipedia content and metadata used by ingestion, retrieval, and summarization.
-/// </summary>
-public sealed record WikipediaPage(
-    string PageId,
-    string Title,
-    string SourceUrl,
-    DateTime RetrievedUtc,
-    IReadOnlyList<WikipediaSection> Sections,
-    IReadOnlyList<string> RelatedTopics);
+public sealed record WikiMatch(string ChunkId, string Section, string Text, string SourceUrl, double Score);
 
-/// <summary>
-/// A chunk produced from a page section and stored for later retrieval.
-/// </summary>
-public sealed record WikipediaChunk(
-    string ChunkId,
-    string PageId,
-    string Section,
-    string Text,
-    string Hash,
-    IReadOnlyList<string> Terms);
+public sealed record WikiTopicReference(string Title, string SourceUrl, string Summary);
 
-/// <summary>
-/// The text snippets returned from retrieval and fed into summarization.
-/// </summary>
-public sealed record RetrievedContext(
-    string ChunkId,
-    string Section,
-    string Text,
-    string SourceUrl,
-    double Score);
-
-internal static partial class TextTokenizer
+public sealed class WikiArticle
 {
-    private static readonly TextInfo TextInfo = CultureInfo.InvariantCulture.TextInfo;
+    public WikiArticle(string title, string sourceUrl)
+    {
+        Title = title;
+        SourceUrl = sourceUrl;
+    }
 
-    /// <summary>
-    /// Breaks text into stable, lowercase terms that can be used for chunking and keyword matching.
-    /// </summary>
+    public string Title { get; set; }
+    public string SourceUrl { get; set; }
+    public string Summary { get; set; } = string.Empty;
+    public DateTime RetrievedUtc { get; set; } = DateTime.UtcNow;
+    public List<string> RelatedArticles { get; } = [];
+    public List<WikiTopicReference> RelatedTopicDetails { get; } = [];
+    public List<WikiSection> Sections { get; } = [];
+    public string ArticleId => TextTools.Slugify(Title);
+
+    public override string ToString()
+    {
+        var links = RelatedArticles.Count == 0 ? "none" : string.Join(", ", RelatedArticles);
+        return $"""
+            Topic: {Title}
+            Summary: {Summary}
+            Links: {links}
+            """;
+    }
+}
+
+internal static class TextTools
+{
+    public static string Clean(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var builder = new StringBuilder(value.Length);
+        var previousWasWhitespace = false;
+
+        foreach (var character in value.Trim())
+        {
+            if (char.IsWhiteSpace(character))
+            {
+                if (!previousWasWhitespace)
+                {
+                    builder.Append(' ');
+                }
+
+                previousWasWhitespace = true;
+                continue;
+            }
+
+            builder.Append(character);
+            previousWasWhitespace = false;
+        }
+
+        return builder.ToString();
+    }
+
     public static IReadOnlyList<string> ExtractTerms(string text, int maxTerms = int.MaxValue)
     {
         if (string.IsNullOrWhiteSpace(text))
@@ -54,37 +76,62 @@ internal static partial class TextTokenizer
             return [];
         }
 
-        return WordRegex()
-            .Matches(text.ToLowerInvariant())
-            .Select(match => match.Value)
-            .Where(value => value.Length > 2)
-            .Distinct(StringComparer.Ordinal)
-            .Take(maxTerms)
-            .ToArray();
+        var terms = new List<string>();
+        var current = new StringBuilder();
+
+        foreach (var character in text)
+        {
+            if (char.IsLetterOrDigit(character))
+            {
+                current.Append(char.ToLowerInvariant(character));
+                continue;
+            }
+
+            AddCurrentTerm(current, terms);
+            if (terms.Count >= maxTerms)
+            {
+                return terms;
+            }
+        }
+
+        AddCurrentTerm(current, terms);
+        return terms.Count > maxTerms ? terms.Take(maxTerms).ToArray() : terms;
     }
 
-    /// <summary>
-    /// Creates a predictable slug from a heading or topic label.
-    /// </summary>
     public static string Slugify(string value)
     {
         var slug = string.Join('-', ExtractTerms(value));
         return string.IsNullOrWhiteSpace(slug) ? "item" : slug;
     }
 
-    /// <summary>
-    /// Normalizes a label into title case for display.
-    /// </summary>
-    public static string ToTitleCase(string value)
+    public static string Hash(string text) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text)));
+
+    public static string TrimToLength(string text, int maxLength)
     {
-        if (string.IsNullOrWhiteSpace(value))
+        var cleaned = Clean(text);
+        if (cleaned.Length <= maxLength)
         {
-            return "Topic";
+            return cleaned;
         }
 
-        return TextInfo.ToTitleCase(value.ToLowerInvariant());
+        return $"{cleaned[..Math.Max(0, maxLength - 3)].TrimEnd()}...";
     }
 
-    [GeneratedRegex("[a-z0-9]+", RegexOptions.Compiled)]
-    private static partial Regex WordRegex();
+    private static void AddCurrentTerm(StringBuilder current, List<string> terms)
+    {
+        if (current.Length <= 2)
+        {
+            current.Clear();
+            return;
+        }
+
+        var term = current.ToString();
+        if (!terms.Contains(term, StringComparer.Ordinal))
+        {
+            terms.Add(term);
+        }
+
+        current.Clear();
+    }
 }

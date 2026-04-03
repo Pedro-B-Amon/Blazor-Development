@@ -25,10 +25,13 @@ public sealed class ApiClient
     public Task<SessionDetailDto?> GetSessionAsync(string sessionId, CancellationToken cancellationToken = default) =>
         _httpClient.GetFromJsonAsync<SessionDetailDto>($"api/sessions/{sessionId}", cancellationToken);
 
-    public async Task<QueryResponse?> SubmitQueryAsync(QueryRequest request, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<GraphDto>> GetGraphsAsync(string sessionId, CancellationToken cancellationToken = default) =>
+        await _httpClient.GetFromJsonAsync<List<GraphDto>>($"api/sessions/{sessionId}/graphs", cancellationToken) ?? [];
+
+    public async Task<SessionDetailDto?> AddArticleAsync(string sessionId, AddWikiArticleRequest request, CancellationToken cancellationToken = default)
     {
-        var response = await _httpClient.PostAsJsonAsync("api/query", request, cancellationToken);
+        var response = await _httpClient.PostAsJsonAsync($"api/sessions/{sessionId}/articles", request, cancellationToken);
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<QueryResponse>(cancellationToken);
+        return await response.Content.ReadFromJsonAsync<SessionDetailDto>(cancellationToken);
     }
 }

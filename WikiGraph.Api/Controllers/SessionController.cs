@@ -1,21 +1,21 @@
 using Microsoft.AspNetCore.Mvc;
+using WikiGraph.Api.Application.Services;
 using WikiGraph.Api.Infrastructure.Persistence;
 using WikiGraph.Contracts;
 
 namespace WikiGraph.Api.Controllers;
 
-/// <summary>
-/// Exposes the session list and session detail endpoints used by the browser UI.
-/// </summary>
 [ApiController]
 [Route("api/sessions")]
 public sealed class SessionController : ControllerBase
 {
-    private readonly ISessionRepository _sessionRepository;
+    private readonly SqliteSessionRepository _sessionRepository;
+    private readonly WikiSessionService _wikiSessionService;
 
-    public SessionController(ISessionRepository sessionRepository)
+    public SessionController(SqliteSessionRepository sessionRepository, WikiSessionService wikiSessionService)
     {
         _sessionRepository = sessionRepository;
+        _wikiSessionService = wikiSessionService;
     }
 
     [HttpGet]
@@ -24,10 +24,28 @@ public sealed class SessionController : ControllerBase
     [HttpPost]
     public ActionResult<SessionSummary> CreateSession([FromBody] CreateSessionRequest? input)
     {
-        // Keep the client simple by filling in the default title server-side when the request omits one.
         var title = input?.Title is { Length: > 0 } ? input.Title : "New session";
         var session = _sessionRepository.CreateSession(title);
         return Created($"/api/sessions/{session.SessionId}", session);
+    }
+
+    [HttpPost("{sessionId}/articles")]
+    public async Task<ActionResult<SessionDetailDto>> AddArticle(
+        string sessionId,
+        [FromBody] AddWikiArticleRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            return BadRequest(new { error = "SessionId is required." });
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Topic) && string.IsNullOrWhiteSpace(request.WikipediaUrl))
+        {
+            return BadRequest(new { error = "Topic or WikipediaUrl is required." });
+        }
+
+        return Ok(await _wikiSessionService.AddArticleAsync(sessionId, request, cancellationToken));
     }
 
     [HttpGet("{sessionId}")]

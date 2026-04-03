@@ -1,62 +1,68 @@
-using Microsoft.SemanticKernel.ChatCompletion;
 using Microsoft.SemanticKernel;
-using WikiGraph.Api.Application.Abstractions;
+using System.Net.Http.Headers;
 using WikiGraph.Api.Application.Services;
 using WikiGraph.Api.Infrastructure.Persistence;
 using WikiGraph.Api.Infrastructure.Wikipedia;
 
 namespace WikiGraph.Api.Configuration;
 
-/// <summary>
-/// Registers the API's controllers, services, persistence, and optional AI integrations.
-/// </summary>
 public static class ServiceCollectionExtensions
 {
     public static IServiceCollection AddWikiGraphApi(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddControllers();
         services.AddOpenApi();
-        services.Configure<OpenAIOptions>(configuration.GetSection("OpenAI"));
+        services.Configure<GeminiOptions>(options =>
+        {
+            configuration.GetSection("Gemini").Bind(options);
+            options.ApiKey = string.IsNullOrWhiteSpace(options.ApiKey)
+                ? Environment.GetEnvironmentVariable("GEMINI_API_KEY") ?? string.Empty
+                : options.ApiKey;
+        });
 
         services.AddSingleton<ISqliteConnectionFactory, SqliteConnectionFactory>();
         services.AddSingleton<SessionMemoryDb>();
-        services.AddSingleton<ISessionRepository, SqliteSessionRepository>();
-        services.AddSingleton<IVectorStore, SqliteVectorStore>();
-        services.AddSingleton<IWikiClient, WikipediaApiClient>();
-        services.AddSingleton<IWikipediaIngestionService, WikipediaIngestionService>();
-        services.AddSingleton<IRagRetrievalService, RagRetrievalService>();
-        services.AddSingleton<IAISummarizer, AISummarizer>();
-        services.AddSingleton<IGraphBuilderService, GraphBuilderService>();
-        services.AddSingleton<IQueryOrchestrator, QueryOrchestrator>();
-
-        var openAIOptions = ResolveOpenAIOptions(configuration);
-        if (openAIOptions.IsEnabled)
+        services.AddSingleton<SqliteSessionRepository>();
+        services.AddHttpClient<WikipediaService>((_, client) =>
         {
-            // Register the OpenAI clients only when an API key is present so local runs stay fully offline-capable.
-            services.AddOpenAIChatCompletion(
-                openAIOptions.ChatModelId,
-                openAIOptions.ApiKey!,
-                openAIOptions.OrganizationId,
-                serviceId: "wikigraph-chat");
+            var contactEmail = Environment.GetEnvironmentVariable("WIKIGRAPH_CONTACT_EMAIL")?.Trim() ?? string.Empty;
+            var userAgent = string.IsNullOrWhiteSpace(contactEmail)
+                ? "WikiGraph/1.0"
+                : $"WikiGraph/1.0 ({contactEmail})";
 
-#pragma warning disable SKEXP0010
-            services.AddOpenAIEmbeddingGenerator(
-                openAIOptions.EmbeddingModelId,
-                openAIOptions.ApiKey!,
-                openAIOptions.OrganizationId,
-                openAIOptions.EmbeddingDimensions,
-                serviceId: "wikigraph-embeddings");
-#pragma warning restore SKEXP0010
+            client.BaseAddress = new Uri("https://en.wikipedia.org/w/api.php");
+            client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", userAgent);
+            client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        });
+        services.AddSingleton<SqliteVectorStore>();
+        services.AddTransient<GeminiService>();
+        services.AddTransient<WikiSessionService>();
+
+        var geminiOptions = ResolveGeminiOptions(configuration);
+        if (geminiOptions.IsEnabled)
+        {
+#pragma warning disable SKEXP0070
+            services.AddGoogleAIGeminiChatCompletion(
+                geminiOptions.TextModel,
+                geminiOptions.ApiKey,
+                serviceId: "wikigraph-chat");
+            services.AddGoogleAIEmbeddingGenerator(
+                geminiOptions.EmbeddingModel,
+                geminiOptions.ApiKey,
+                serviceId: "wikigraph-embeddings",
+                dimensions: geminiOptions.EmbeddingDimensions);
+#pragma warning restore SKEXP0070
         }
 
         return services;
     }
 
-    private static OpenAIOptions ResolveOpenAIOptions(IConfiguration configuration)
+    private static GeminiOptions ResolveGeminiOptions(IConfiguration configuration)
     {
-        var options = configuration.GetSection("OpenAI").Get<OpenAIOptions>() ?? new OpenAIOptions();
-        options.ApiKey ??= Environment.GetEnvironmentVariable("OPENAI_API_KEY");
-        options.OrganizationId ??= Environment.GetEnvironmentVariable("OPENAI_ORG_ID");
+        var options = configuration.GetSection("Gemini").Get<GeminiOptions>() ?? new GeminiOptions();
+        options.ApiKey = string.IsNullOrWhiteSpace(options.ApiKey)
+            ? Environment.GetEnvironmentVariable("GEMINI_API_KEY") ?? string.Empty
+            : options.ApiKey;
         return options;
     }
 }
