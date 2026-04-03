@@ -11,12 +11,14 @@ public sealed class SessionMemoryDb
 
     private readonly ISqliteConnectionFactory _connectionFactory;
 
+    // Creates the schema manager and ensures the database tables exist immediately.
     public SessionMemoryDb(ISqliteConnectionFactory connectionFactory)
     {
         _connectionFactory = connectionFactory;
         InitializeSchema();
     }
 
+    // Creates the tables and seed rows used by the session store.
     private void InitializeSchema()
     {
         using var connection = _connectionFactory.OpenConnection();
@@ -131,6 +133,7 @@ public sealed class SessionMemoryDb
         seedCommand.ExecuteNonQuery();
     }
 
+    // Adds a missing column during startup when the on-disk schema is older than the code.
     private static void EnsureColumn(SqliteConnection connection, string tableName, string columnName, string columnDefinition)
     {
         // Treat schema drift as a lightweight migration: only add the column when it is missing.

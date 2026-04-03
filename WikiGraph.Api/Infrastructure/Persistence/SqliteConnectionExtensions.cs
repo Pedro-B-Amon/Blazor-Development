@@ -4,9 +4,7 @@ namespace WikiGraph.Api.Infrastructure.Persistence;
 
 internal static class SqliteConnectionExtensions
 {
-    /// <summary>
-    /// Runs a one-off SQL statement without repeating command creation boilerplate.
-    /// </summary>
+    // Runs a one-off SQL statement without repeating command creation boilerplate.
     public static void ExecuteNonQuery(this SqliteConnection connection, string sql)
     {
         using var command = connection.CreateCommand();

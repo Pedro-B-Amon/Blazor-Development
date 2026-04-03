@@ -15,6 +15,7 @@ public sealed class SqliteVectorStore
     private readonly GeminiService _geminiService;
     private readonly ILogger<SqliteVectorStore> _logger;
 
+    // Creates the article store that powers retrieval and graph matching.
     public SqliteVectorStore(
         ISqliteConnectionFactory connectionFactory,
         SessionMemoryDb _,
@@ -26,6 +27,7 @@ public sealed class SqliteVectorStore
         _logger = logger;
     }
 
+    // Replaces an article and its chunks with the latest Wikipedia snapshot.
     public async Task UpsertArticleAsync(string sessionId, WikiArticle article, CancellationToken cancellationToken = default)
     {
         using var connection = _connectionFactory.OpenConnection();
@@ -48,6 +50,7 @@ public sealed class SqliteVectorStore
         transaction.Commit();
     }
 
+    // Searches stored chunks and ranks them by keyword overlap or embedding similarity.
     public async Task<IReadOnlyList<WikiMatch>> SearchAsync(string sessionId, string text, int count, CancellationToken cancellationToken = default)
     {
         using var connection = _connectionFactory.OpenConnection();
@@ -91,6 +94,7 @@ public sealed class SqliteVectorStore
             .ToArray();
     }
 
+    // Stores one chunk embedding using Gemini vectors or keyword fallback tokens.
     private async Task InsertEmbeddingAsync(
         SqliteConnection connection,
         string chunkId,
@@ -118,6 +122,7 @@ public sealed class SqliteVectorStore
         command.ExecuteNonQuery();
     }
 
+    // Deletes the previous rows for one stored article before rewriting it.
     private static void DeleteStoredArticle(SqliteConnection connection, string articleId, SqliteTransaction transaction)
     {
         using var deleteEmbeddings = connection.CreateCommand();
@@ -146,6 +151,7 @@ public sealed class SqliteVectorStore
         deleteArticle.ExecuteNonQuery();
     }
 
+    // Inserts the Wikipedia page header row.
     private static void InsertArticle(SqliteConnection connection, string sessionId, string articleId, WikiArticle article, SqliteTransaction transaction)
     {
         using var command = connection.CreateCommand();
@@ -162,6 +168,7 @@ public sealed class SqliteVectorStore
         command.ExecuteNonQuery();
     }
 
+    // Inserts one document chunk and its content hash.
     private static void InsertSection(
         SqliteConnection connection,
         string articleId,
@@ -184,6 +191,7 @@ public sealed class SqliteVectorStore
         command.ExecuteNonQuery();
     }
 
+    // Builds a stable chunk id from the article, section, position, and content hash.
     private static string BuildChunkId(string articleId, WikiSection section, int index, string text)
     {
         // Section headings can repeat (for example "Key Point"), so include the position and a short content hash.
@@ -192,6 +200,7 @@ public sealed class SqliteVectorStore
         return $"{articleId}:{index + 1:D2}:{headingSlug}:{hash}";
     }
 
+    // Scores a stored chunk against the current query payload.
     private double Score(byte[] payload, string encodingKind, IReadOnlySet<string> queryTerms, float[]? queryVector)
     {
         try
@@ -212,6 +221,7 @@ public sealed class SqliteVectorStore
         }
     }
 
+    // Computes cosine similarity for two vectors.
     private static double CosineSimilarity(IReadOnlyList<float> left, IReadOnlyList<float> right)
     {
         var length = Math.Min(left.Count, right.Count);

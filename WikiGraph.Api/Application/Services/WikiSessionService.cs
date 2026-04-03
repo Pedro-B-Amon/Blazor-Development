@@ -12,6 +12,7 @@ public sealed class WikiSessionService
     private readonly SqliteSessionRepository _sessionRepository;
     private readonly SqliteVectorStore _vectorStore;
 
+    // Wires the Wikipedia, reply, repository, and vector store services together.
     public WikiSessionService(
         WikipediaService wikipediaService,
         GeminiService geminiService,
@@ -24,6 +25,7 @@ public sealed class WikiSessionService
         _vectorStore = vectorStore;
     }
 
+    // Adds an article to a session and returns the updated session snapshot.
     public async Task<SessionDetailDto> AddArticleAsync(
         string sessionId,
         AddWikiArticleRequest request,
@@ -57,6 +59,7 @@ public sealed class WikiSessionService
         return _sessionRepository.GetSession(sessionId)!;
     }
 
+    // Combines the prompt with recent user messages for retrieval.
     private static string BuildSearchText(string prompt, IReadOnlyList<MessageDto> messages)
     {
         var recentUserMessages = messages
@@ -70,6 +73,7 @@ public sealed class WikiSessionService
             : $"{prompt} {string.Join(' ', recentUserMessages)}";
     }
 
+    // Formats the user's input so the saved message still shows URL context.
     private static string BuildUserMessage(string topic, string wikipediaUrl, string articleTitle)
     {
         if (string.IsNullOrWhiteSpace(wikipediaUrl))
@@ -85,6 +89,7 @@ public sealed class WikiSessionService
         return $"{topic}{Environment.NewLine}Wikipedia URL: {wikipediaUrl}";
     }
 
+    // Converts retrieved matches into citation DTOs.
     private static IReadOnlyList<CitationDto> BuildCitations(WikiArticle article, IReadOnlyList<WikiMatch> matches)
     {
         var citations = matches.Take(3)
@@ -106,9 +111,10 @@ public sealed class WikiSessionService
             new CitationDto(article.Title, article.SourceUrl, "Overview", null),
             new CitationDto($"{article.Title} related topics", $"{article.SourceUrl}#related-topics", "Related topics", null),
             new CitationDto($"{article.Title} references", $"{article.SourceUrl}#references", "References", null)
-        ];
+            ];
     }
 
+    // Builds a small topic graph around the article and related context.
     private static IReadOnlyList<GraphDto> BuildGraphs(
         string prompt,
         WikiArticle article,
@@ -169,6 +175,7 @@ public sealed class WikiSessionService
         return [new GraphDto(topic, nodes, edges)];
     }
 
+    // Collects short labels that can hang off the main graph topics.
     private static IReadOnlyList<string> BuildSupportingTopics(WikiArticle article, IReadOnlyList<WikiMatch> matches)
     {
         // Second ring: short supporting labels derived from related-topic summaries and retrieved section names.
@@ -183,6 +190,7 @@ public sealed class WikiSessionService
             .ToArray();
     }
 
+    // Splits longer text into a few graph-friendly labels.
     private static IEnumerable<string> SplitGraphLabels(string value)
     {
         var cleaned = TextTools.Clean(value);
@@ -201,6 +209,7 @@ public sealed class WikiSessionService
         return labels.Length == 0 ? [cleaned] : labels;
     }
 
+    // Derives a short session title from the prompt text.
     private static string InferTitle(string prompt)
     {
         var title = prompt
