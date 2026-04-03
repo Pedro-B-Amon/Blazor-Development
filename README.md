@@ -25,7 +25,7 @@ For the frontend and backend together, see [USAGE.md](./USAGE.md).
 - `WikiGraph.Api/Program.cs`
   - loads local `.env` values before configuration
   - enables CORS for the API
-  - maps controllers and OpenAPI in development
+  - maps controllers fot endpoints
 - `WikiGraph.Api/Controllers/HealthController.cs`
   - returns a simple health status
   - gives a fast liveness check for the API
