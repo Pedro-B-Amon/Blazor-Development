@@ -12,15 +12,18 @@ public sealed class SessionController : ControllerBase
     private readonly SqliteSessionRepository _sessionRepository;
     private readonly WikiSessionService _wikiSessionService;
 
+    // Wires the session repository and article workflow into the HTTP layer.
     public SessionController(SqliteSessionRepository sessionRepository, WikiSessionService wikiSessionService)
     {
         _sessionRepository = sessionRepository;
         _wikiSessionService = wikiSessionService;
     }
 
+    // Returns the current session list for the active user.
     [HttpGet]
     public ActionResult<IReadOnlyList<SessionSummary>> GetSessions() => Ok(_sessionRepository.GetSessions());
 
+    // Creates a session, using a default title when none is provided.
     [HttpPost]
     public ActionResult<SessionSummary> CreateSession([FromBody] CreateSessionRequest? input)
     {
@@ -29,6 +32,7 @@ public sealed class SessionController : ControllerBase
         return Created($"/api/sessions/{session.SessionId}", session);
     }
 
+    // Adds a Wikipedia topic or URL to the session and returns the updated session detail.
     [HttpPost("{sessionId}/articles")]
     public async Task<ActionResult<SessionDetailDto>> AddArticle(
         string sessionId,
@@ -48,12 +52,14 @@ public sealed class SessionController : ControllerBase
         return Ok(await _wikiSessionService.AddArticleAsync(sessionId, request, cancellationToken));
     }
 
+    // Returns one session with its messages, citations, and graphs.
     [HttpGet("{sessionId}")]
     public ActionResult<SessionDetailDto> GetSession(string sessionId)
     {
         return _sessionRepository.GetSession(sessionId) is { } session ? Ok(session) : NotFound();
     }
 
+    // Returns the stored graphs for one session.
     [HttpGet("{sessionId}/graphs")]
     public ActionResult<IReadOnlyList<GraphDto>> GetGraphs(string sessionId)
     {

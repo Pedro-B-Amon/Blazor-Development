@@ -11,11 +11,13 @@ public sealed class SqliteSessionRepository
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly ISqliteConnectionFactory _connectionFactory;
 
+    // Creates the repository that reads and writes session data in SQLite.
     public SqliteSessionRepository(ISqliteConnectionFactory connectionFactory, SessionMemoryDb _)
     {
         _connectionFactory = connectionFactory;
     }
 
+    // Inserts a new session row and returns the stored summary.
     public SessionSummary CreateSession(string title)
     {
         var nowUtc = DateTime.UtcNow;
@@ -26,6 +28,7 @@ public sealed class SqliteSessionRepository
         return session;
     }
 
+    // Ensures a session exists, or updates its title and access time.
     public void EnsureSession(string sessionId, string title, DateTime accessedUtc)
     {
         using var connection = _connectionFactory.OpenConnection();
@@ -45,6 +48,7 @@ public sealed class SqliteSessionRepository
         transaction.Commit();
     }
 
+    // Returns the current session list ordered by recent activity.
     public IReadOnlyList<SessionSummary> GetSessions()
     {
         using var connection = _connectionFactory.OpenConnection();
@@ -67,6 +71,7 @@ public sealed class SqliteSessionRepository
         return sessions;
     }
 
+    // Returns one session with its messages, citations, and graphs.
     public SessionDetailDto? GetSession(string sessionId)
     {
         using var connection = _connectionFactory.OpenConnection();
@@ -83,12 +88,14 @@ public sealed class SqliteSessionRepository
             LoadGraphs(connection, sessionId));
     }
 
+    // Returns just the graphs when the session exists.
     public IReadOnlyList<GraphDto>? GetGraphs(string sessionId)
     {
         using var connection = _connectionFactory.OpenConnection();
         return LoadSession(connection, sessionId) is null ? null : LoadGraphs(connection, sessionId);
     }
 
+    // Saves one user turn and one assistant turn plus their citations and graphs.
     public void SaveTurn(
         string sessionId,
         string sessionTitle,
@@ -130,11 +137,13 @@ public sealed class SqliteSessionRepository
         transaction.Commit();
     }
 
+    // Keeps the original title unless the session still has the default placeholder title.
     private static string ResolveSessionTitle(string currentTitle, string requestedTitle) =>
         string.Equals(currentTitle, DefaultSessionTitle, StringComparison.OrdinalIgnoreCase)
             ? requestedTitle
             : currentTitle;
 
+    // Inserts a session row into the database.
     private static void InsertSession(SqliteConnection connection, SessionSummary session, string userId, SqliteTransaction? transaction)
     {
         using var command = connection.CreateCommand();
@@ -151,6 +160,7 @@ public sealed class SqliteSessionRepository
         command.ExecuteNonQuery();
     }
 
+    // Updates the title and last access time for an existing session.
     private static void UpdateSession(SqliteConnection connection, string sessionId, string title, DateTime lastAccessUtc, SqliteTransaction transaction)
     {
         using var command = connection.CreateCommand();
@@ -166,6 +176,7 @@ public sealed class SqliteSessionRepository
         command.ExecuteNonQuery();
     }
 
+    // Inserts one message and returns its generated row id.
     private static long InsertMessage(SqliteConnection connection, string sessionId, MessageDto message, SqliteTransaction transaction)
     {
         using var command = connection.CreateCommand();
@@ -186,6 +197,7 @@ public sealed class SqliteSessionRepository
         return (long)(idCommand.ExecuteScalar() ?? 0L);
     }
 
+    // Inserts one citation linked to the assistant message that produced it.
     private static void InsertCitation(SqliteConnection connection, string sessionId, long assistantMessageId, CitationDto citation, SqliteTransaction transaction)
     {
         using var command = connection.CreateCommand();
@@ -203,6 +215,7 @@ public sealed class SqliteSessionRepository
         command.ExecuteNonQuery();
     }
 
+    // Serializes one graph row into JSON columns.
     private static void InsertGraph(SqliteConnection connection, string sessionId, GraphDto graph, SqliteTransaction transaction)
     {
         using var command = connection.CreateCommand();
@@ -218,6 +231,7 @@ public sealed class SqliteSessionRepository
         command.ExecuteNonQuery();
     }
 
+    // Loads a session header row when it exists.
     private static SessionSummary? LoadSession(SqliteConnection connection, string sessionId)
     {
         using var command = connection.CreateCommand();
@@ -232,6 +246,7 @@ public sealed class SqliteSessionRepository
         return reader.Read() ? ReadSessionSummary(reader) : null;
     }
 
+    // Loads the ordered chat messages for one session.
     private static IReadOnlyList<MessageDto> LoadMessages(SqliteConnection connection, string sessionId)
     {
         using var command = connection.CreateCommand();
@@ -256,6 +271,7 @@ public sealed class SqliteSessionRepository
         return messages;
     }
 
+    // Loads the citations associated with one session.
     private static IReadOnlyList<CitationDto> LoadCitations(SqliteConnection connection, string sessionId)
     {
         using var command = connection.CreateCommand();
@@ -281,6 +297,7 @@ public sealed class SqliteSessionRepository
         return citations;
     }
 
+    // Loads graph rows and deserializes the node and edge JSON.
     private static IReadOnlyList<GraphDto> LoadGraphs(SqliteConnection connection, string sessionId)
     {
         using var command = connection.CreateCommand();
@@ -304,6 +321,7 @@ public sealed class SqliteSessionRepository
         return graphs;
     }
 
+    // Maps a SQLite reader row back into a session summary DTO.
     private static SessionSummary ReadSessionSummary(SqliteDataReader reader) =>
         new(
             reader.GetString(0),

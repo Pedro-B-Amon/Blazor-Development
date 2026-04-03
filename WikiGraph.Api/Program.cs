@@ -27,6 +27,7 @@ app.MapControllers();
 
 app.Run();
 
+// Loads the nearest .env file while walking up the directory tree.
 static void LoadEnvironmentFile(string startPath)
 {
     for (var directory = new DirectoryInfo(startPath); directory is not null; directory = directory.Parent)

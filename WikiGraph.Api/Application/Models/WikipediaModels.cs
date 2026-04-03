@@ -39,6 +39,7 @@ public sealed class WikiArticle
 
 internal static class TextTools
 {
+    // Normalizes whitespace: "  hello\tworld  " -> "hello world".
     public static string Clean(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -69,6 +70,7 @@ internal static class TextTools
         return builder.ToString();
     }
 
+    // Extracts unique lowercase words from text, for example "Roman architecture" -> ["roman", "architecture"].
     public static IReadOnlyList<string> ExtractTerms(string text, int maxTerms = int.MaxValue)
     {
         if (string.IsNullOrWhiteSpace(text))
@@ -98,15 +100,18 @@ internal static class TextTools
         return terms.Count > maxTerms ? terms.Take(maxTerms).ToArray() : terms;
     }
 
+    // Builds a slug from the extracted terms, for example "Roman Architecture" -> "roman-architecture".
     public static string Slugify(string value)
     {
         var slug = string.Join('-', ExtractTerms(value));
         return string.IsNullOrWhiteSpace(slug) ? "item" : slug;
     }
 
+    // Returns a SHA-256 hex digest for the input text.
     public static string Hash(string text) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text)));
 
+    // Trims text to a maximum length and adds "..." when it is shortened.
     public static string TrimToLength(string text, int maxLength)
     {
         var cleaned = Clean(text);

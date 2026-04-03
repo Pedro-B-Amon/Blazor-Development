@@ -17,12 +17,14 @@ public sealed class GeminiService
     private readonly GeminiOptions _options;
     private readonly ILogger<GeminiService> _logger;
 
+    // Creates a service instance with Gemini settings but without optional SK integrations.
     public GeminiService(IOptions<GeminiOptions> options, ILogger<GeminiService> logger)
     {
         _options = options.Value;
         _logger = logger;
     }
 
+    // Creates a service instance and resolves optional chat/embedding services from DI.
     public GeminiService(
         IServiceProvider serviceProvider,
         IOptions<GeminiOptions> options,
@@ -33,6 +35,7 @@ public sealed class GeminiService
         _embeddingGenerator = serviceProvider.GetService<IEmbeddingGenerator<string, Embedding<float>>>();
     }
 
+    // Generates the answer and related topic labels, falling back to local text if Gemini is unavailable.
     public async Task<GeminiReply> GenerateReplyAsync(
         string prompt,
         WikiArticle article,
@@ -74,6 +77,7 @@ public sealed class GeminiService
         return fallback;
     }
 
+    // Creates an embedding vector for retrieval, or null when embeddings are disabled.
     public async Task<float[]?> CreateEmbeddingAsync(string text, CancellationToken cancellationToken = default)
     {
         if (!_options.IsEnabled || string.IsNullOrWhiteSpace(text))
@@ -98,6 +102,7 @@ public sealed class GeminiService
         }
     }
 
+    // Builds the chat prompt that asks Gemini for JSON-only output.
     private static ChatHistory BuildChatHistory(
         string prompt,
         WikiArticle article,
@@ -160,6 +165,7 @@ public sealed class GeminiService
         return history;
     }
 
+    // Builds a local answer when Gemini is off or unavailable.
     private static GeminiReply BuildFallbackReply(
         string prompt,
         WikiArticle article,
@@ -197,6 +203,7 @@ public sealed class GeminiService
             BuildFallbackTopics(prompt, article, matches));
     }
 
+    // Parses Gemini JSON output into the reply model.
     private static GeminiReply? ReadReply(
         string? responseText,
         WikiArticle article,
@@ -217,6 +224,7 @@ public sealed class GeminiService
         return new GeminiReply(TextTools.Clean(text), BuildFallbackTopics(prompt, article, matches));
     }
 
+    // Parses the JSON answer and related topics from the model response.
     private static GeminiReply? TryParseReply(
         string text,
         string prompt,
@@ -261,6 +269,7 @@ public sealed class GeminiService
         }
     }
 
+    // Builds a safe fallback topic list from the prompt, article, and matches.
     private static IReadOnlyList<string> BuildFallbackTopics(
         string prompt,
         WikiArticle article,
@@ -276,6 +285,7 @@ public sealed class GeminiService
             .ToArray();
     }
 
+    // Removes markdown code fences around JSON payloads.
     private static string StripCodeFence(string text)
     {
         var cleaned = text.Trim();
@@ -295,6 +305,7 @@ public sealed class GeminiService
         return closingFence < 0 ? content.Trim() : content[..closingFence].Trim();
     }
 
+    // Extracts the first text part from Gemini's JSON response shape.
     private static string? ReadGeneratedText(string json)
     {
         using var document = JsonDocument.Parse(json);

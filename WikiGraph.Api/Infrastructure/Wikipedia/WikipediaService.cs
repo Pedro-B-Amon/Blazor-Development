@@ -8,12 +8,14 @@ public sealed class WikipediaService
     private readonly HttpClient _httpClient;
     private readonly ILogger<WikipediaService> _logger;
 
+    // Creates the Wikipedia client wrapper used by the API.
     public WikipediaService(HttpClient httpClient, ILogger<WikipediaService> logger)
     {
         _httpClient = httpClient;
         _logger = logger;
     }
 
+    // Resolves a Wikipedia article, or a fallback article when the fetch fails.
     public async Task<WikiArticle> GetArticleAsync(string topic, string? wikipediaUrl, CancellationToken cancellationToken = default)
     {
         var cleanTopic = TextTools.Clean(topic);
@@ -39,6 +41,7 @@ public sealed class WikipediaService
         }
     }
 
+    // Searches for the best canonical title when the user passed free-form text.
     private async Task<string> SearchBestTitleAsync(string requestedTitle, string wikipediaUrl, CancellationToken cancellationToken)
     {
         if (!string.IsNullOrWhiteSpace(wikipediaUrl) || string.IsNullOrWhiteSpace(requestedTitle))
@@ -48,7 +51,7 @@ public sealed class WikipediaService
 
         try
         {
-            // Search first so free-form topics like "grass types" still resolve to a canonical article title.
+            // MediaWiki `action=query&list=search` turns free-form text like "grass types" into a canonical title.
             using var document = await GetJsonDocumentAsync(
                 $"?action=query&format=json&formatversion=2&list=search&srnamespace=0&srlimit=1&srsearch={Uri.EscapeDataString(requestedTitle)}",
                 cancellationToken);
@@ -77,12 +80,13 @@ public sealed class WikipediaService
         return requestedTitle;
     }
 
+    // Loads a single Wikipedia page payload with extracts and optional links.
     private async Task<JsonElement?> LoadPageAsync(string title, bool includeLinks, CancellationToken cancellationToken)
     {
         var props = includeLinks ? "extracts|info|links" : "extracts|info";
         var linkOptions = includeLinks ? "&plnamespace=0&pllimit=8" : string.Empty;
 
-        // Pull the lead extract plus a small set of outbound article links so we can summarize and build related topics.
+        // MediaWiki `action=query&prop=extracts|info|links` provides the article summary, URL, and outbound links.
         using var document = await GetJsonDocumentAsync(
             $"?action=query&format=json&formatversion=2&redirects=1&prop={props}&inprop=url&explaintext=1&exintro=1&titles={Uri.EscapeDataString(title)}{linkOptions}",
             cancellationToken);
@@ -106,6 +110,7 @@ public sealed class WikipediaService
         return null;
     }
 
+    // Builds the article model from the fetched Wikipedia page payload.
     private async Task<WikiArticle> BuildArticleAsync(
         JsonElement page,
         string originalTopic,
@@ -149,6 +154,7 @@ public sealed class WikipediaService
         return article;
     }
 
+    // Loads related topic summaries for the linked article titles.
     private async Task<IReadOnlyList<WikiTopicReference>> LoadRelatedTopicsAsync(
         IReadOnlyList<string> linkedTitles,
         CancellationToken cancellationToken)
@@ -161,7 +167,7 @@ public sealed class WikipediaService
         try
         {
             var titleList = string.Join('|', linkedTitles.Select(title => title.Replace('|', ' ')));
-            // Batch the related-topic lookup into one Wikipedia call so graph/topic expansion stays fast.
+            // MediaWiki `action=query` also accepts multiple titles, which keeps related-topic lookup to one request.
             using var document = await GetJsonDocumentAsync(
                 $"?action=query&format=json&formatversion=2&redirects=1&prop=extracts|info&inprop=url&explaintext=1&exintro=1&titles={Uri.EscapeDataString(titleList)}",
                 cancellationToken);
@@ -201,6 +207,7 @@ public sealed class WikipediaService
         }
     }
 
+    // Fetches raw JSON from Wikipedia and parses it into a document.
     private async Task<JsonDocument> GetJsonDocumentAsync(string relativeUrl, CancellationToken cancellationToken)
     {
         using var response = await _httpClient.GetAsync(relativeUrl, cancellationToken);
@@ -208,6 +215,7 @@ public sealed class WikipediaService
         return await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(cancellationToken), cancellationToken: cancellationToken);
     }
 
+    // Adds overview, detail, and key-point sections to the article model.
     private static void AddSections(WikiArticle article, string extract)
     {
         article.Sections.Add(new WikiSection("Overview", article.Summary));
@@ -226,6 +234,7 @@ public sealed class WikipediaService
         }
     }
 
+    // Reads and filters linked article titles from the page payload.
     private static IReadOnlyList<string> ReadLinkedTitles(JsonElement page, string articleTitle)
     {
         if (!page.TryGetProperty("links", out var links) || links.ValueKind != JsonValueKind.Array)
@@ -243,6 +252,7 @@ public sealed class WikipediaService
             .ToArray();
     }
 
+    // Builds fallback related topics from the current title and prompt.
     private static IReadOnlyList<WikiTopicReference> BuildSeedRelatedTopics(string title, string originalTopic)
     {
         var seedTitles = TextTools.ExtractTerms(originalTopic, 4)
@@ -259,6 +269,7 @@ public sealed class WikipediaService
             .ToArray();
     }
 
+    // Builds a fallback article when Wikipedia cannot be fetched or parsed.
     private static WikiArticle BuildFallbackArticle(string title, string topic, string wikipediaUrl)
     {
         var article = new WikiArticle(title, wikipediaUrl)
@@ -285,6 +296,7 @@ public sealed class WikipediaService
         return article;
     }
 
+    // Resolves a Wikipedia title from a URL path segment or the original topic.
     private static string ResolveRequestedTitle(string topic, string? wikipediaUrl)
     {
         if (!string.IsNullOrWhiteSpace(wikipediaUrl) && Uri.TryCreate(wikipediaUrl, UriKind.Absolute, out var uri))
@@ -299,6 +311,7 @@ public sealed class WikipediaService
         return string.IsNullOrWhiteSpace(topic) ? "Wikipedia topic" : topic;
     }
 
+    // Resolves the final article URL, or builds one from the title.
     private static string ResolveUrl(string title, string? wikipediaUrl)
     {
         if (!string.IsNullOrWhiteSpace(wikipediaUrl))
@@ -309,6 +322,7 @@ public sealed class WikipediaService
         return $"https://en.wikipedia.org/wiki/{Uri.EscapeDataString(title.Replace(' ', '_'))}";
     }
 
+    // Reads a string property from a JSON element when the property exists.
     private static string? ReadString(JsonElement element, string propertyName)
     {
         return element.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.String
@@ -316,12 +330,14 @@ public sealed class WikipediaService
             : null;
     }
 
+    // Returns the first sentence, or a trimmed fallback when none exists.
     private static string FirstSentence(string text)
     {
         var sentence = SplitSentences(text).FirstOrDefault();
         return string.IsNullOrWhiteSpace(sentence) ? TextTools.TrimToLength(text, 280) : sentence;
     }
 
+    // Splits text into cleaned paragraph-sized chunks.
     private static IEnumerable<string> SplitParagraphs(string text)
     {
         return text
@@ -330,6 +346,7 @@ public sealed class WikipediaService
             .Where(value => !string.IsNullOrWhiteSpace(value));
     }
 
+    // Splits text into cleaned sentences with trailing punctuation restored.
     private static IEnumerable<string> SplitSentences(string text)
     {
         return text
@@ -339,6 +356,7 @@ public sealed class WikipediaService
             .Select(value => value.EndsWith(".", StringComparison.Ordinal) ? value : $"{value}.");
     }
 
+    // Capitalizes the first letter of a word for display.
     private static string Capitalize(string value)
     {
         if (string.IsNullOrWhiteSpace(value))

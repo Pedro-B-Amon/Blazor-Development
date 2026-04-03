@@ -8,6 +8,7 @@ namespace WikiGraph.Api.Configuration;
 
 public static class ServiceCollectionExtensions
 {
+    // Registers the API services, persistence, HTTP client, and optional Gemini integrations.
     public static IServiceCollection AddWikiGraphApi(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddControllers();
@@ -30,6 +31,7 @@ public static class ServiceCollectionExtensions
                 ? "WikiGraph/1.0"
                 : $"WikiGraph/1.0 ({contactEmail})";
 
+            // Wikipedia access here is just the public MediaWiki JSON API at /w/api.php.
             client.BaseAddress = new Uri("https://en.wikipedia.org/w/api.php");
             client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", userAgent);
             client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
@@ -57,6 +59,7 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
+    // Reads Gemini settings from config and environment variables.
     private static GeminiOptions ResolveGeminiOptions(IConfiguration configuration)
     {
         var options = configuration.GetSection("Gemini").Get<GeminiOptions>() ?? new GeminiOptions();
