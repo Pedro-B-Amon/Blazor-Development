@@ -1,6 +1,38 @@
 @WikiGraph.Api_HostAddress = http://localhost:5052
 
-GET {{WikiGraph.Api_HostAddress}}/weatherforecast/
+GET {{WikiGraph.Api_HostAddress}}/api/health
 Accept: application/json
 
 ###
+
+GET {{WikiGraph.Api_HostAddress}}/api/sessions
+Accept: application/json
+
+###
+
+POST {{WikiGraph.Api_HostAddress}}/api/sessions
+Content-Type: application/json
+
+{
+  "title": "New session"
+}
+
+###
+
+POST {{WikiGraph.Api_HostAddress}}/api/sessions/session-x/articles
+Content-Type: application/json
+
+{
+  "topic": "Roman architecture",
+  "wikipediaUrl": null
+}
+
+###
+
+GET {{WikiGraph.Api_HostAddress}}/api/sessions/session-x
+Accept: application/json
+
+###
+
+GET {{WikiGraph.Api_HostAddress}}/api/sessions/session-x/graphs
+Accept: application/json
