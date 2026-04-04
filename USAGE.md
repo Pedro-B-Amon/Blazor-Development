@@ -1,36 +1,38 @@
 # Usage
 
-WikiGraph has two entry points:
+WikiGraph has two local entry points:
 
 - Backend API: `WikiGraph.Api`
-- Frontend app: `WikiGraph.Web`
+- Frontend client: `WikiGraph.Client`
 
-## Run The Backend And Frontend
-
-Use two terminals:
+## Run
 
 ```bash
 dotnet run --project WikiGraph.Api/WikiGraph.Api.csproj
 ```
 
 ```bash
-dotnet run --project WikiGraph.Web/WikiGraph.Web.csproj
+dotnet run --project WikiGraph.Client/WikiGraph.Client.csproj
 ```
 
-Or run both from one shell on macOS/Linux:
-
-```bash
-dotnet run --project WikiGraph.Api/WikiGraph.Api.csproj & dotnet run --project WikiGraph.Web/WikiGraph.Web.csproj
-```
+Open `http://localhost:5052` for the hosted API reference.
+Open `http://localhost:5024` for the WikiGraph client.
 
 ## Ports
 
 - API: `http://localhost:5052`
-- Frontend: `http://localhost:5039`
+- Client: `http://localhost:5024`
+
+## OpenAPI
+
+- Hosted API reference UI: `http://localhost:5052/docs/v1`
+- Runtime document: `http://localhost:5052/openapi/v1.json`
+- Build-time document: `dotnet build WikiGraph.Api/WikiGraph.Api.csproj`
+- Generated file output: `WikiGraph.Api/openapi/WikiGraph.Api.json`
 
 ## Notes
 
 - The backend stores data in SQLite.
-- The frontend talks to the API while you browse the site.
+- Opening the backend root redirects to the hosted API reference at `/docs/v1`.
+- The Blazor client runs separately and calls the API at `http://localhost:5052/`.
 - If you change local environment values, restart the backend.
-
