@@ -1,4 +1,5 @@
 using WikiGraph.Api.Configuration;
+using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -13,17 +14,22 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-if (app.Environment.IsDevelopment())
+app.MapOpenApi("/openapi/{documentName}.json");
+app.MapScalarApiReference("/docs", options =>
 {
-    app.MapOpenApi();
-}
+    options.WithTitle("WikiGraph API Reference")
+        .WithOpenApiRoutePattern("/openapi/{documentName}.json")
+        .DisableDefaultFonts();
+});
 
 app.UseCors();
 if (!app.Environment.IsDevelopment())
 {
     app.UseHttpsRedirection();
 }
+
 app.MapControllers();
+app.MapGet("/", () => Results.Redirect("/docs/v1"));
 
 app.Run();
 
