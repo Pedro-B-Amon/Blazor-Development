@@ -1,0 +1,41 @@
+@* Pages will be routed from the Home.Razor to thier own indiviual page 
+   The {sessionId} Part of the page routing will give *@
+@page "/Sessions/{sessionId}"
+@inject ApiClient ApiClient
+
+
+@code{
+    
+    @* SessionId Property, Used for attaining the proper session information from the DTO.
+       SessionId will be responsible for eveything used in rendering and logic *@
+    [Parameter]
+    public string? SessionId {get; set;}
+    private SessionDetailDto? session;
+    private bool isBusy; 
+    private string? errorMsg; 
+
+    @* When the Route Parameter is taken and the SessionId is set this will execute *@
+    protected override async Task OnParametersSetAsync()
+    {
+        if(string.IsNullOrWhiteSpace(SessionId)){
+            errorMsg = "No Session Id found";
+            session = null;
+            return;
+        }
+        isBusy = true;
+
+        try
+        {
+            session = await ApiClient.GetSessionAsync(SessionId);
+            if(session is null){
+                errorMsg = "Unable to find message";
+            }
+        }
+        finally
+        {
+            isBusy = false;
+        }
+       
+    }
+
+}
