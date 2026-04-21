@@ -76,6 +76,17 @@ code {
     color: #f9d7a7;
 }
 
+.search{
+    width: max-content;
+    display: flex;
+    align-items: center;
+    color: #f7facf;
+}
+
+.search-input{
+    
+}
+
 .shell {
     display: grid;
     grid-template-columns: 290px minmax(0, 1fr);

@@ -1,5 +1,9 @@
 @page "/"
+
+@* Injecting Dependencies into the Frontend, Navigation Manager is responsible for having prompt sumbission redirect to session pages,
+   ApiClient is responsible for handling communication with the backend (https requests etc )*@
 @inject ApiClient ApiClient
+@inject NavigationManager PromptRedirect
 
 <PageTitle>WikiGraph</PageTitle>
 
@@ -9,6 +13,7 @@
         <h1>Prompt to have a comprehensive summary of a topic</h1>
         <p class="hero-text">store citations, related topics, and summaries in one centralized workspace</p>
     </div>
+    @* DemoPrompt *@
     <div class="hero-actions">
         <button class="send" @onclick="RunDemo" disabled="@isBusy">Try demo prompt</button>
         <p class="hero-note">Client API target <code>http://localhost:5052</code></p>
@@ -16,122 +21,52 @@
 </section>
 
 <div class="workspace-grid">
-    <ChatSidebar Sessions="sessions" SelectedSessionId="@selectedSessionId" OnSelectSession="HandleSessionSelected" />
+    @* <ChatSidebar Sessions="sessions" SelectedSessionId="@selectedSessionId" OnSelectSession="HandleSessionSelected" /> *@
 
-    <ChatThread Messages="messages"
+    <ChatThread 
                 Prompt="@prompt"
                 PromptChanged="OnPromptChanged"
-                SourceUrl="@sourceUrl"
-                SourceUrlChanged="OnSourceUrlChanged"
-                IsBusy="isBusy"
-                ErrorMessage="@errorMessage"
+                WikiUrl="@sourceUrl"
+                WikiUrlChanged="OnSourceUrlChanged"
+                Busy="isBusy"
+                ErrorMsg="@errorMessage"
                 OnSubmit="SubmitPrompt" />
-
-    <section class="detail-column">
-        <section class="card detail-card">
-            <div class="panel-header">
-                <div>
-                    <p class="eyebrow">Sources</p>
-                    <h2>Citations</h2>
-                </div>
-                <span class="count-pill">@citations.Count</span>
-            </div>
-            <CitationList Citations="citations" />
-        </section>
-
-        <section class="card detail-card" id="graphs">
-            <div class="panel-header">
-                <div>
-                    <p class="eyebrow">Knowledge view</p>
-                    <h2>Topic graphs</h2>
-                </div>
-                <span class="count-pill">@graphs.Count</span>
-            </div>
-            <GraphView Graphs="graphs" />
-        </section>
-    </section>
-</div>
+   </div>
 
 @code {
-    @* TODO:
-        - make Home.Razor more of a landing page (much more bare bones, just a search prompt and sessions)
-        - Move and tweak some of the current razor code to Session.Razor 
-            - Session Rendering
-            - Reloading Pages
-            - Session Ownership*@
-    private readonly List<SessionSummary> sessions = [];
-    private readonly List<MessageDto> messages = [];
-    private readonly List<CitationDto> citations = [];
-    private readonly List<GraphDto> graphs = [];
     private string? selectedSessionId;
     private bool isBusy;
     private string? errorMessage;
     private string prompt = string.Empty;
     private string sourceUrl = string.Empty;
 
-    protected override Task OnInitializedAsync() => RunBusyStateAsync(LoadSessions);
-
-    private async Task LoadSessions()
-    {
-        var result = await ApiClient.GetSessionsAsync();
-        sessions.Clear();
-        sessions.AddRange(result);
-
-        if (sessions.Count == 0)
-        {
-            selectedSessionId = null;
-            ClearSessionArtifacts();
-            return;
-        }
-
-        if (string.IsNullOrWhiteSpace(selectedSessionId) || sessions.All(session => session.SessionId != selectedSessionId))
-        {
-            await LoadSession(sessions[0].SessionId);
-        }
-    }
-
-    private Task HandleSessionSelected(string sessionId) => RunBusyStateAsync(() => LoadSession(sessionId));
-
-    private async Task LoadSession(string sessionId)
-    {
-        var session = await ApiClient.GetSessionAsync(sessionId);
-        if (session is null)
-        {
-            return;
-        }
-
-        selectedSessionId = sessionId;
-        ReplaceSessionArtifacts(session);
-    }
-
+    @* Use this Sumbit Prompt as a new Session Id  *@
     private async Task SubmitPrompt()
     {
+        @* Check to see if prompt exists If not do nothing*@
         if (string.IsNullOrWhiteSpace(prompt) && string.IsNullOrWhiteSpace(sourceUrl))
         {
             return;
         }
 
-        await RunBusyStateAsync(async () =>
+        await RunBusyStateAsync(async() =>
         {
+            @* Session Created Here *@
             var sessionId = await EnsureSelectedSessionAsync();
             var normalizedPrompt = prompt.Trim();
             var normalizedUrl = sourceUrl.Trim();
-            var payload = await ApiClient.AddArticleAsync(
-                sessionId,
-                new AddWikiArticleRequest(
-                    normalizedPrompt,
-                    string.IsNullOrWhiteSpace(normalizedUrl) ? null : normalizedUrl));
 
-            if (payload is null)
-            {
+            if(string.IsNullOrWhiteSpace(normalizedPrompt) && string.IsNullOrWhiteSpace(normalizedPrompt))
                 return;
-            }
+            
+            var newPrompt = await ApiClient.AddArticleAsync(sessionId, 
+            new AddWikiArticleRequest(normalizedPrompt, normalizedUrl));
 
             prompt = string.Empty;
             sourceUrl = string.Empty;
+            @* redirect to correct Session with *@
+            PromptRedirect.NavigateTo($"Sessions/"+sessionId);
 
-            ReplaceSessionArtifacts(payload);
-            await LoadSessions();
         });
     }
 
@@ -165,21 +100,6 @@
         var session = await ApiClient.CreateSessionAsync(new CreateSessionRequest(InferTitle(titleSeed)));
         selectedSessionId = session.SessionId;
         return session.SessionId;
-    }
-
-    private void ReplaceSessionArtifacts(SessionDetailDto session)
-    {
-        ClearSessionArtifacts();
-        messages.AddRange(session.Messages);
-        citations.AddRange(session.Citations);
-        graphs.AddRange(session.Graphs);
-    }
-
-    private void ClearSessionArtifacts()
-    {
-        messages.Clear();
-        citations.Clear();
-        graphs.Clear();
     }
 
     private async Task RunBusyStateAsync(Func<Task> action)
