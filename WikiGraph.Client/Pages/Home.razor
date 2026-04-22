@@ -20,7 +20,7 @@
     </div>
 </section>
 
-<div class="workspace-grid">
+
     @* <ChatSidebar Sessions="sessions" SelectedSessionId="@selectedSessionId" OnSelectSession="HandleSessionSelected" /> *@
 
     <ChatThread 
@@ -31,7 +31,6 @@
                 Busy="isBusy"
                 ErrorMsg="@errorMessage"
                 OnSubmit="SubmitPrompt" />
-   </div>
 
 @code {
     private string? selectedSessionId;

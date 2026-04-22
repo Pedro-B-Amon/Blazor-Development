@@ -1,5 +1,7 @@
+@using WikiGraph.Client.Pages
 @inherits LayoutComponentBase
-<div class="shell">
+@inject NavigationManager NavigationManager
+<div class="getUrl">
     <aside class="sidebar">
         <div class="brand">
             <div class="logo">WG</div>
@@ -18,5 +20,15 @@
         @Body
     </main>
 </div>
+
+@code{
+    private string getUrl(){
+
+        string currentPage = NavigationManager.Uri;
+        if(currentPage.ToLower().Contains("Session")){return "session";}
+        else {return "home";}
+    }
+
+}
 
 
