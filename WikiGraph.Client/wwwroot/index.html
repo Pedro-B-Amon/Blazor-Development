@@ -26,6 +26,38 @@
         <span class="dismiss">🗙</span>
     </div>
     <script src="_framework/blazor.webassembly.js"></script>
+    <script> 
+        window.graphCanvas = { 
+            renderGraph: function () { 
+                //Graph Setup Begins here
+                var canvas = document.getElementById("myCanvas"); 
+                var context = canvas.getContext("2d"); 
+                const bounds = canvas.getBoundingClientRect();
+                canvas.width = bounds.width;
+                canvas.height = bounds.height;
+                //Setup ends here
+                context.fillStyle = "White";
+                context.fillRect(0, 0, canvas.width, canvas.height);
+            },
+
+            GraphLayout: function(nodes, width, length,){
+                const centerX = width/2;
+                const centY = length/2;
+                const radianSpacing = 2*pi/nodes;
+
+                const radius = Math.min(width, length)
+                for(let i = 0; i < nodes; i++){
+                    //draw edges from circle here
+
+                }
+            },
+
+            clearCanvas: function(canvas, context){
+                context.clearCanvas(0,0,canvas.width, canvas.height);
+
+            }
+        }; 
+    </script>
 </body>
 
 </html>

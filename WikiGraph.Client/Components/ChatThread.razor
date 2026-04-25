@@ -1,44 +1,41 @@
-<section class="card thread-card" id="thread">
-    <div class="panel-header">
-        <div>
-            <p class="eyebrow">Chat workspace</p>
-            <h2>Conversation</h2>
-        </div>
-        <span class="status-pill @(Busy ? "busy" : "ready")">@(Busy ? "Syncing" : "Ready")</span>
+
+
+
+@* <span class="status-pill @(Busy ? "busy" : "ready")">@(Busy ? "Syncing" : "Ready")</span> *@
+
+@if (!string.IsNullOrWhiteSpace(ErrorMsg))
+{
+<div class="error-banner">@ErrorMsg</div>
+}
+
+<form class="prompt-bar" @onsubmit="HandleSubmit" @onsubmit:preventDefault="true">
+    <div class = "prompt-row">
+        <textarea class="prompt-input"
+                value="@Prompt"
+                @oninput="HandlePromptChanged"
+                aria-label="Prompt"
+                placeholder="Ask about a topic, concept, person, or event"
+                disabled="@Busy">
+        </textarea>
+        <button class="send" type="submit" disabled="@Busy">@(Busy ? "Sending..." : "Send message")
+
+        </button>
     </div>
 
-    @if (!string.IsNullOrWhiteSpace(ErrorMsg))
-    {
-        <div class="error-banner">@ErrorMsg</div>
-    }
+    <div class= "prompt-url">
+    <input class="-prompt-url-input"
+            value="@WikiUrl"
+            @oninput="HandleSourceUrlChanged"
+            aria-label="Wikipedia URL"
+            placeholder="https://en.wikipedia.org/wiki/..."
+            disabled="@Busy" />
+    </div>
 
-    <form class="composer" @onsubmit="HandleSubmit" @onsubmit:preventDefault="true">
-        <label class="input-shell">
-            <span>Prompt</span>
-            <textarea class="composer-input composer-textarea"
-                      value="@Prompt"
-                      @oninput="HandlePromptChanged"
-                      aria-label="Prompt"
-                      placeholder="Ask about a topic, concept, person, or event"
-                      disabled="@Busy"></textarea>
-        </label>
 
-        <label class="input-shell">
-            <span>Wikipedia URL</span>
-            <input class="composer-input"
-                   value="@WikiUrl"
-                   @oninput="HandleSourceUrlChanged"
-                   aria-label="Wikipedia URL"
-                   placeholder="https://en.wikipedia.org/wiki/..."
-                   disabled="@Busy" />
-        </label>
+   
+    
 
-        <div class="composer-actions">
-            <p class="muted">Enter a prompt, a Wikipedia URL, or both.</p>
-            <button class="send" type="submit" disabled="@Busy">@(Busy ? "Sending..." : "Send message")</button>
-        </div>
-    </form>
-</section>
+</form>
 
 @code {
     [Parameter]

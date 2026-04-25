@@ -5,11 +5,9 @@
 @inject ApiClient ApiClient
 
 <nav class="nav">
-    
-    <NavLink href="@("/")">Home</NavLink>
 
     @foreach(SessionSummary session in SessionSummaries){
-         <NavLink href="@($"/Sessions/{session.SessionId}")">@session.Title</NavLink>
+         <NavLink class = "nav-pill" href="@($"/Sessions/{session.SessionId}")">@session.Title</NavLink>
     }
 </nav>
 
