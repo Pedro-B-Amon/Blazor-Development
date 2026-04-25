@@ -18,7 +18,9 @@
                 @if(role.Equals("user")){avatar = "You";}
                 else{avatar = "AI"; }
                 <article class="message @role">
-                    <div class="message-avatar">@avatar</div>
+                    <div class="message-avatar">
+                        @avatar
+                    </div>
                     <div class="message-bubble">
                         <div class = "message-meta">
                             <span class="role">@role</span>
@@ -28,18 +30,17 @@
                     </div>
                 </article>
             }
-
-            <div class="prompt-dock">
-                <ChatThread
-                Prompt="@sessionPrompt"
-                PromptChanged="OnPromptChanged"
-                WikiUrl="@wikiUrl"
-                WikiUrlChanged="OnSourceUrlChanged"
-                Busy="@busy"
-                ErrorMsg="@errorMsg"
-                OnSubmit="SubmitPrompt">
-                </ChatThread>
-            </div>
+        </div>
+        <div class="prompt-dock">
+            <PromptBar
+            Prompt="@sessionPrompt"
+            PromptChanged="OnPromptChanged"
+            WikiUrl="@wikiUrl"
+            WikiUrlChanged="OnSourceUrlChanged"
+            Busy="@busy"
+            ErrorMsg="@errorMsg"
+            OnSubmit="SubmitPrompt">
+            </PromptBar>
         </div>
     </div>
     <div class="session-secondary">

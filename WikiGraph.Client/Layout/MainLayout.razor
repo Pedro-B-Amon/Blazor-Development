@@ -1,20 +1,20 @@
 @using WikiGraph.Client.Pages
 @inherits LayoutComponentBase
 @inject NavigationManager NavigationManager
-<div class="shell">
+<div class="shell @getUrl()">
     <aside class="sidebar">
         <div class="brand">
             <div class="logo">WG</div>
             <div>
                 <div class="brand-title">WikiGraph</div>
-                <div class="brand-subtitle">Research chat client</div>
+                <div class="brand-subtitle">Reasearch Assistant</div>
             </div>
         </div>
-        <p class="sidebar-copy">Trace answers back to citations and relationship graphs built from Wikipedia context.</p>
+        <p class="sidebar-copy">Generate citations and topic graphs all from a single prompt</p>
         
         <div class = "sidebar-home-link">
-            <NavLink href="/" class = "nav=pill" Match="NavLinkMatch.All">
-                Home
+            <NavLink href="/" class = "nav-pill" Match="NavLinkMatch.All">
+                New Session
             </NavLink>
         </div>
 

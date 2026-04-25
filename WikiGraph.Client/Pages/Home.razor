@@ -8,29 +8,24 @@
 <PageTitle>WikiGraph</PageTitle>
 
 <section class="card">
-    <div class="hero-copy">
-        <p class="eyebrow">Wikipedia research Assistant</p>
+    <div class="hero-header">
         <h1>Prompt to have a comprehensive summary of a topic</h1>
-        <p class="hero-text">store citations, related topics, and summaries in one centralized workspace</p>
-    </div>
-    @* DemoPrompt *@
-    <div class="hero-actions">
-        <button class="send" @onclick="RunDemo" disabled="@isBusy">Try demo prompt</button>
-        <p class="hero-note">Client API target <code>http://localhost:5052</code></p>
-    </div>
+        @* DemoPrompt *@
+        <div class="hero-actions">
+            <button class="send demo" @onclick="RunDemo" disabled="@isBusy">Try demo prompt</button>
+            <p class="hero-note">Client API target <code>http://localhost:5052</code></p>
+        </div>
+  </div>
 </section>
 
-
-    @* <ChatSidebar Sessions="sessions" SelectedSessionId="@selectedSessionId" OnSelectSession="HandleSessionSelected" /> *@
-
-    <ChatThread 
-                Prompt="@prompt"
-                PromptChanged="OnPromptChanged"
-                WikiUrl="@sourceUrl"
-                WikiUrlChanged="OnSourceUrlChanged"
-                Busy="isBusy"
-                ErrorMsg="@errorMessage"
-                OnSubmit="SubmitPrompt" />
+<PromptBar 
+    Prompt="@prompt"
+    PromptChanged="OnPromptChanged"
+    WikiUrl="@sourceUrl"
+    WikiUrlChanged="OnSourceUrlChanged"
+    Busy="isBusy"
+    ErrorMsg="@errorMessage"
+    OnSubmit="SubmitPrompt" />
 
 @code {
     private string? selectedSessionId;
