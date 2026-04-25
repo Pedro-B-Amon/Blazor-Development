@@ -2,10 +2,16 @@
 
 
 <p>This is a Test</p>
-<h1>@CurrentGraph</h1>
+@if (CurrentGraph != null)
+{
+    <h1>@CurrentGraph.Topic</h1>
+}
+else
+{
+    <p>Loading...</p>
+}
 
-
-<canvas @ref = "canvasRefrence" canvas id ="myCanvas" width = 800, height="600"></canvas>
+<canvas @ref = "canvasRefrence" canvas id ="myCanvas" width = "1000", height="600"></canvas>
 
 
 
@@ -15,10 +21,11 @@
     public GraphDto? CurrentGraph { get; set; }
 
     private ElementReference canvasRefrence;
-
+private bool _rendered;
+private string? _lastTopic;
     protected override async Task OnAfterRenderAsync(bool FirstRender){
-        if(FirstRender){
-
+        if(CurrentGraph.Topic!= _lastTopic && CurrentGraph != null){
+            _lastTopic = CurrentGraph.Topic;
             await JSRuntime.InvokeVoidAsync("graphCanvas.renderGraph", canvasRefrence, CurrentGraph);
         }
     }

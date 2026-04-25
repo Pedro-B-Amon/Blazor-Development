@@ -27,27 +27,64 @@
     </div>
     <script src="_framework/blazor.webassembly.js"></script>
     <script> 
+
+    function drawNode(ctx, x, y, radius, text) {
+    // Draw circle
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, 2 * Math.PI);
+    ctx.fillStyle = "white";
+    ctx.fill();
+    ctx.strokeStyle = "black";
+    ctx.stroke();
+
+    // Draw text (centered)
+    ctx.fillStyle = "black";
+    ctx.font = "12px Arial";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, x, y);
+}
         window.graphCanvas = { 
-            renderGraph: function () { 
+            renderGraph: function (arg,arg2) { 
                 //Graph Setup Begins here
                 var canvas = document.getElementById("myCanvas"); 
                 var context = canvas.getContext("2d"); 
                 const bounds = canvas.getBoundingClientRect();
                 canvas.width = bounds.width;
                 canvas.height = bounds.height;
+                
                 //Setup ends here
                 context.fillStyle = "White";
                 context.fillRect(0, 0, canvas.width, canvas.height);
+                context.fillStyle = "Black";
+                context.font = "10px Arial";
+                context.fillText(arg2.topic,canvas.width/2,canvas.height/2);
+                console.log(arg,arg2,arg2.nodes.length);
+                this.GraphLayout(arg2.nodes,canvas.width,canvas.height,context);
             },
-
-            GraphLayout: function(nodes, width, length,){
-                const centerX = width/2;
-                const centY = length/2;
-                const radianSpacing = 2*pi/nodes;
-
+            GraphLayout: function(nodes, width, length,ctx){
+                const cX = width/2;
+                const cY = length/2;
+                const radianSpacing = 2*Math.PI/nodes.length;
+                const r = 80;
                 const radius = Math.min(width, length)
-                for(let i = 0; i < nodes; i++){
+                for(let i = 0; i < nodes.length; i++){
                     //draw edges from circle here
+                    let x = r*Math.cos(i*radianSpacing);
+                    let y = r*Math.sin(i*radianSpacing);
+
+    
+                    if(nodes[i].label.length < 30){
+                ctx.fillStyle = "rgb("+nodes[i].weight*255/5+", 0, 0)"
+
+                ctx.fillText(nodes[i].label,cX+x,cY+y);
+                ctx.beginPath();       // 1. Start path
+                ctx.moveTo(cX, cY);      
+                ctx.lineTo(cX+x, cY+y); 
+                ctx.stroke();        
+                    }
+
+
 
                 }
             },
