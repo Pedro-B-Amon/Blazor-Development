@@ -7,16 +7,28 @@
 }
 else
 {
-    <div class="citations">
+    <div class="citations-dropdowns">
         @foreach (var citation in Citations)
         {
-            <a class="citation" href="@citation.Url" target="_blank" rel="noreferrer">
-                <div class="citation-copy">
-                    <strong>@citation.Title</strong>
-                    <span>@(string.IsNullOrWhiteSpace(citation.Section) ? "Wikipedia excerpt" : citation.Section)</span>
+            <details class="dropdown-card">
+                <summary class="dropdown-summary">
+                    <div class="dropdown-copy">
+                        <strong>@citation.Title</strong>
+                        <span>
+                            @(string.IsNullOrWhiteSpace(citation.Section)
+                                ? "Wikipedia excerpt"
+                                : citation.Section)
+                        </span>
+                    </div>
+                    <span class="dropdown-icon">⌄</span>
+                </summary>
+
+                <div class="dropdown-body">
+                    <a href="@citation.Url" target="_blank" rel="noreferrer" class="dropdown-link">
+                        Open source
+                    </a>
                 </div>
-                <span class="citation-link">Open</span>
-            </a>
+            </details>
         }
     </div>
 }
