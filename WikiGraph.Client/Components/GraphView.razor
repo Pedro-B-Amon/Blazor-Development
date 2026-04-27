@@ -1,34 +1,80 @@
 @inject IJSRuntime JSRuntime
 
+<div class="session-panel details-panel">
+    <div class="details-header">
+        <p>@(CurrentGraph?.Topic)</p>
 
-<p>This is a Test</p>
-@if (CurrentGraph != null)
-{
-    <h1>@CurrentGraph.Topic</h1>
-}
-else
-{
-    <p>Loading...</p>
-}
+        <div class="details-toggle">
+            <button type="button"
+                    class="toggle-button @(activeView == DetailView.Citations ? "active" : "")"
+                    @onclick="() => SetView(DetailView.Citations)">
+                Citations
+            </button>
 
-<canvas @ref = "canvasRefrence" canvas id ="myCanvas" width = "1000", height="600"></canvas>
+            <button type="button"
+                    class="toggle-button @(activeView == DetailView.Graph ? "active" : "")"
+                    @onclick="() => SetView(DetailView.Graph)">
+                Graph
+            </button>
+        </div>
+    </div>
 
-
-
+    @if (activeView == DetailView.Citations)
+    {
+        <CitationList Citations="Citations" />
+    }
+    else
+    {
+        @if (CurrentGraph is null)
+        {
+            <div class="empty-card">
+                <strong>No graph yet</strong>
+                <p class="muted">Ask about a topic to generate a related graph.</p>
+            </div>
+        }
+        else
+        {
+            <div class="graph-panel">
+                <h3>@CurrentGraph.Topic</h3>
+                <canvas @ref="canvasReference" class="graph-canvas"></canvas>
+            </div>
+        }
+    }
+</div>
 
 @code {
     [Parameter]
     public GraphDto? CurrentGraph { get; set; }
 
-    private ElementReference canvasRefrence;
-private bool _rendered;
-private string? _lastTopic;
-    protected override async Task OnAfterRenderAsync(bool FirstRender){
-        if(CurrentGraph.Topic!= _lastTopic && CurrentGraph != null){
-            _lastTopic = CurrentGraph.Topic;
-            await JSRuntime.InvokeVoidAsync("graphCanvas.renderGraph", canvasRefrence, CurrentGraph);
-        }
+    [Parameter]
+    public IReadOnlyList<CitationDto> Citations { get; set; } = [];
+
+    private ElementReference canvasReference;
+    private string? _lastTopic;
+    private DetailView activeView = DetailView.Citations;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (activeView != DetailView.Graph || CurrentGraph is null)
+            return;
+
+        if (CurrentGraph.Topic == _lastTopic)
+            return;
+
+        _lastTopic = CurrentGraph.Topic;
+
+        await JSRuntime.InvokeVoidAsync("graphCanvas.renderGraph", canvasReference, CurrentGraph);
     }
-    private static string ResolveLabel(GraphDto graph, string nodeId) =>
-        graph.Nodes.FirstOrDefault(node => node.Id == nodeId)?.Label ?? nodeId;
+
+    private async Task SetView(DetailView view)
+    {
+        activeView = view;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private enum DetailView
+    {
+        Citations,
+        Graph
+    }
 }
