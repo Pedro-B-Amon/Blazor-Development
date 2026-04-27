@@ -2,7 +2,7 @@
 
 <div class="session-panel details-panel">
     <div class="details-header">
-        <p>@(CurrentGraph?.Topic)</p>
+        <p>@(CurrentGraph?.Topic ?? "Session details")</p>
 
         <div class="details-toggle">
             <button type="button"
@@ -25,7 +25,7 @@
     }
     else
     {
-        @if (CurrentGraph is null)
+        @if (CurrentGraph is null || Graphs.Count == 0)
         {
             <div class="empty-card">
                 <strong>No graph yet</strong>
@@ -35,6 +35,18 @@
         else
         {
             <div class="graph-panel">
+                <div class="graph-toolbar">
+                    <label for="graphSelect"><strong>Choose a Graph:</strong></label>
+                    <select id="graphSelect" class="graph-select" @onchange="OnGraphSelected">
+                        @for (int i = 0; i < Graphs.Count; i++)
+                        {
+                            <option value="@i" selected="@(Graphs[i].Topic == CurrentGraph.Topic)">
+                                @Graphs[i].Topic
+                            </option>
+                        }
+                    </select>
+                </div>
+
                 <h3>@CurrentGraph.Topic</h3>
                 <canvas @ref="canvasReference" id="myCanvas" class="graph-canvas"></canvas>
             </div>
@@ -45,6 +57,12 @@
 @code {
     [Parameter]
     public GraphDto? CurrentGraph { get; set; }
+
+    [Parameter]
+    public EventCallback<GraphDto?> CurrentGraphChanged { get; set; }
+
+    [Parameter]
+    public IReadOnlyList<GraphDto> Graphs { get; set; } = [];
 
     [Parameter]
     public IReadOnlyList<CitationDto> Citations { get; set; } = [];
@@ -75,6 +93,22 @@
             _lastTopic = null;
         }
 
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task OnGraphSelected(ChangeEventArgs e)
+    {
+        if (e.Value is null)
+            return;
+
+        if (!int.TryParse(e.Value.ToString(), out var index))
+            return;
+
+        if (index < 0 || index >= Graphs.Count)
+            return;
+
+        _lastTopic = null;
+        await CurrentGraphChanged.InvokeAsync(Graphs[index]);
         await InvokeAsync(StateHasChanged);
     }
 

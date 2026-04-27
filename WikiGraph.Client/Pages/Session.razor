@@ -44,7 +44,10 @@
         </div>
     </div>
     <div class="session-secondary">
-        <GraphView CurrentGraph="currentGraph" Citations="sessionCitations" />
+        <GraphView CurrentGraph="currentGraph"
+           CurrentGraphChanged="OnCurrentGraphChanged"
+           Graphs="sessionGraphs"
+           Citations="sessionCitations" />
     </div>
 </div>
 
@@ -55,7 +58,13 @@
 @inject ApiClient ApiClient
 
 @code{
- 
+    
+    private Task OnCurrentGraphChanged(GraphDto? graph)
+    {
+        currentGraph = graph;
+        return Task.CompletedTask;
+    }
+
     [Parameter]
     public string? SessionId { get; set; }
 
