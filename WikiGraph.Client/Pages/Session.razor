@@ -44,7 +44,7 @@
         </div>
     </div>
     <div class="session-secondary">
-        <GraphView CurrentGraph=@currentGraph/>
+        <GraphView CurrentGraph="currentGraph" Citations="sessionCitations" />
     </div>
 </div>
 
@@ -72,7 +72,7 @@
     private List<CitationDto> sessionCitations = [];
     private List<GraphDto> sessionGraphs =[];  
     
-    private GraphDto currentGraph;
+    private GraphDto? currentGraph;
     private string sessionTitle = string.Empty;
 
     @* Session Prompt Variables and Session *@
@@ -129,7 +129,7 @@
         sessionMessages.AddRange(CurrentSession.Messages);
         sessionCitations.AddRange(CurrentSession.Citations);
         sessionGraphs.AddRange(CurrentSession.Graphs);
-        currentGraph = sessionGraphs[sessionGraphs.Count -1];
+        currentGraph = sessionGraphs.LastOrDefault();
     }
 
     @* When the prompt is changed run these methods so the page copy of promt can be updated *@

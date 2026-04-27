@@ -802,3 +802,82 @@ h3 {
         max-width: 100%;
     }
 }
+.details-panel {
+    display: grid;
+    gap: 1rem;
+    padding: 1rem;
+    min-height: 100%;
+    align-content: start;
+}
+
+.details-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.details-header h2 {
+    margin: 0;
+}
+
+.details-toggle {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.toggle-button {
+    border: 1px solid var(--panel-border);
+    background: var(--paper-base);
+    color: var(--text);
+    padding: 0.55rem 0.9rem;
+    border-radius: 999px;
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.toggle-button.active {
+    background: var(--navtab-active);
+    border-color: var(--accent-blue);
+}
+
+.graph-panel {
+    display: grid;
+    gap: 0.75rem;
+}
+
+.graph-panel h3 {
+    margin: 0;
+}
+
+.graph-canvas {
+    width: 100%;
+    height: 600px;
+    border: 1px solid var(--panel-border);
+    border-radius: 0.5rem;
+    background: white;
+}
+
+.citations {
+    display: grid;
+    gap: 0.75rem;
+}
+
+.citation {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem;
+}
+
+.citation-copy {
+    display: grid;
+    gap: 0.25rem;
+}
+
+.citation-link {
+    font-weight: 700;
+    color: var(--accent-blue);
+}
